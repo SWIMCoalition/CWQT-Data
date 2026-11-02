@@ -1108,12 +1108,6 @@ def build_charts_page(season, sites, win, pdfs: dict, logo: str, out: Path):
 
 def download_sheet(sheet_id: str, dest: Path) -> Path:
     """Download the Google Sheet as .xlsx (formulas' last calculated values included).
-
-    Two ways to give access:
-      * Share the sheet as "Anyone with the link can view" -> no credentials needed.
-      * Keep it private and share it with a Google service account; put that
-        account's JSON key in the GOOGLE_SERVICE_ACCOUNT_JSON environment variable
-        (needs `pip install google-auth requests`).
     """
     url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=xlsx"
     headers = {"User-Agent": "cwqt-visualize"}

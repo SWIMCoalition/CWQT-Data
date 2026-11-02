@@ -1,7 +1,7 @@
 <!doctype html>
 <!--
   CWQT Data Portal: map page template.
-  cwqt_visualize.py fills in the LOGO_URL and DATA placeholders (in double curly braces)
+  cwqt_visualize.py fills in the placeholders in double curly braces
   and saves the result as index.html.
   Edit freely: the layout and wording are here, the shared look is in cwqt.css.
 -->
@@ -79,10 +79,12 @@
 
 <header class="banner">
   <div class="brand">
-    <img class="logo" src="{{LOGO_URL}}" alt="SWIM Coalition"
-         onerror="this.outerHTML='<span class=&quot;logo-text&quot;>SWIM Coalition</span>'">
+    <a href="https://www.swimmablenyc.org/">
+        <img class="logo" src="{{LOGO_URL}}" alt="SWIM Coalition"
+             onerror="this.outerHTML='<span class=&quot;logo-text&quot;>SWIM Coalition</span>'">
+    </a>
     <h1>Community Water Quality Testing Data Portal</h1>
-  </div>
+</div>
   <nav class="actions">
     <a class="btn" href="charts.html" title="See all charts and graphics">
       <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M2 14h12M4 11V7M8 11V3M12 11V6"/></svg>
@@ -346,7 +348,7 @@
       d.innerHTML =
         `<summary>${chev}Legend</summary>
          <div style="margin-top:6px"><b>Enterococcus geometric mean</b></div>
-         <div class="muted" style="margin-bottom:6px">MPN per 100 ml, NYC DOH primary-contact scale</div>` +
+         <div class="muted" style="margin-bottom:6px">Most probable number (MPN) per 100 ml</div>` +
         ["good", "advisory", "poor"].map(k => `<div class="row"><span class="dot" style="background:${C.colors[k]}"></span>${esc(C.labels[k])}</div>`).join("") +
         `<div class="row" style="margin-top:4px"><span class="dot" style="width:9px;height:9px;border:1.5px dashed ${C.ink2};opacity:.8"></span>Fewer than ${C.minN} samples</div>
          <div class="muted" style="margin-top:6px">${esc(D.updated)}. Click a site for details.</div>`;
