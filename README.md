@@ -17,6 +17,8 @@ Results entered in the master sheet automatically appear on the map the next mor
 |---|---|
 | `cwqt_visualize.py` | Reads the workbook, calculates the statistics and writes every output. All thresholds and definitions are in its **CONFIGURATION** section near the top. |
 | `templates/` | The web pages' design: `map.html` (map page), `charts.html` (charts page), `cwqt.css` (shared colors, fonts, banner). Edit these to change how the portal looks; see [Changing the look](#changing-the-look-of-the-portal). |
+| `templates/assets/` | SWIM branding: `swim-logo.png` (banner and chart footers), `swim-emblem.png` (browser-tab icon) and `fonts/` (Poppins, used in the charts; free under the SIL Open Font License, see `OFL-LICENSE.txt`). |
+| `data/` | Extra map layers (outfalls, drainage areas, green infrastructure) and `layers.json`, which says how each one is shown. See [Map layers](#map-layers). |
 | `requirements.txt` | Python packages the script needs. |
 | `.github/workflows/update-map.yml` | The daily job: download the sheet → run the script → publish the site. |
 | `status.json` | Written by the daily job: latest sample date, sample count and site count. A new commit means new data arrived. |
@@ -115,32 +117,62 @@ The design lives in `templates/` and is separate from the calculations. Edit tho
 |---|---|
 | Colors, fonts, button style, banner height | the **SWIM BRAND** block at the top of `templates/cwqt.css` |
 | Banner title, button labels, popup wording, legend text | `templates/map.html` |
+| How popup titles are written ("Rutgers Boathouse, Raritan River" / "New Brunswick · New Jersey") | `popup_heading` in `cwqt_visualize.py`. The titles come from the Site name, Waterbody, Borough/State and Neighborhood/Town columns on the Information tab. |
 | Chart descriptions and page text on the charts page | `templates/charts.html` |
-| The logo | It's loaded from SWIM's Wix site (`LOGO_URL` in `cwqt_visualize.py`). To host it here instead, save it as `templates/assets/swim-logo.png`. |
+| The logo | Replace `templates/assets/swim-logo.png`. The script trims empty transparent margins automatically, so any version of the logo works. It's used in the banner and in every chart's footer. |
+| The browser-tab icon (favicon) | Replace `templates/assets/swim-emblem.png`, ideally a square PNG with a transparent background, 512 px or larger. The script makes all the sizes browsers need (`favicon.ico`, `favicon-32.png`, `apple-touch-icon.png`), so there's nothing to convert. |
+| Chart fonts and colors | `templates/assets/fonts/` (Poppins), plus `INK`, `SERIES`, etc. in the CONFIGURATION section of `cwqt_visualize.py`. The footer text on each chart is `CHART_FOOTER`. |
 | Basemap choices or the streams overlay | the `BASEMAPS` and `WATERWAYS` lists near the top of the script in `templates/map.html`. `WATERWAYS.minZoom` sets how far in you must zoom before streams appear. |
 | Thresholds, categories, season dates | the CONFIGURATION section of `cwqt_visualize.py` (used by the charts *and* the map) |
 
 Words in double curly braces in the templates (e.g. `{{DATA}}`, `{{N_SITES}}`) are filled in by the
 script. Keep them where you want those values to appear.
 
-**Adding map layers later** (e.g. CSO outfalls, green infrastructure): put the data file (GeoJSON) in
-`templates/assets/`, then add an entry to the `EXTRA_LAYERS` list in `templates/map.html`. There's a
-commented example there. Each entry appears as its own group with a checkbox in the Layers menu.
-
-Shapefiles and KML files need converting to GeoJSON first. Do it once per dataset, e.g. at
-<https://mapshaper.org>: drop in the file (for a shapefile, all of its parts: `.shp`, `.shx`, `.dbf`
-and `.prj`), then Export → GeoJSON. While there:
-- Make sure it's in latitude/longitude. NYC data often comes in State Plane feet; in mapshaper, type
-  `-proj wgs84` in the console.
-- Simplify large drainage-area polygons (Simplify, ~10–20%) so the file stays small and fast.
-
-**Current design** (October 2026), matched to swimmablenyc.org:
+**Current design** (November 2026), matched to swimmablenyc.org:
 - Poppins font, SWIM navy `#092e6e` with square-cornered buttons, SWIM blue `#0d4ab2` links, cream
   `#f7f7f3` page background.
 - Light gray basemap with the USGS streams and rivers overlay on top, so narrow waterways like the
   Bronx River stand out. The overlay appears from the ~1-mile zoom level, because USGS labels every
   lake and reservoir at the citywide view. "Streets" and "Satellite" basemaps are also available.
 - On phones the legend starts collapsed, button labels shorten, and tap targets are larger.
+- Charts use Poppins and SWIM navy, with a footer showing the source, the "Data through" date and the
+  SWIM logo.
+
+---
+
+## Map layers
+
+Besides the CWQT sites, the map's Layers menu offers the datasets in `data/`:
+
+| Group | Layer | Shown from | Style |
+|---|---|---|---|
+| Sewers & stormwater | Outfalls | ~1-mile zoom (12) | colored by type: CSO, MS4, highway, direct drainage, other |
+| Sewers & stormwater | Combined sewer drainage areas | any zoom | violet outlines |
+| Green infrastructure | Green infrastructure sites | neighborhood zoom (14) | green dots |
+| Green infrastructure | Porous pavement | 14 | green shapes |
+| Green infrastructure | Medians, Regulated projects | 13 | green shapes |
+
+Each layer is off until someone checks it, and is only downloaded then. Clicking a feature shows its
+details. Point layers only draw what's on screen, so even the 16,000 green infrastructure sites stay
+fast.
+
+**How it works.** `data/layers.json` lists each layer: which file(s), which fields go in the popup,
+colors, and the zoom level it appears at. On each run the script reads those files and writes small
+web-ready copies to `layers/` on the site, keeping only the listed fields, rounding coordinates to
+about 1 m and simplifying outlines. The ~24 MB of raw downloads become about 1.8 MB.
+
+**Updating a dataset.** Replace the file in `data/` with the new download. File names in
+`layers.json` use `*` (e.g. `NYC_Citywide_Outfalls_*.json`), so a newly dated file is picked up
+automatically. If two files match, the newest name wins, so delete the old one.
+
+**Adding a dataset.** Put the file in `data/`, then copy an existing entry in `data/layers.json` and
+edit it. The notes at the top of that file explain each setting. Files must be GeoJSON in
+latitude/longitude, like NYC Open Data's GeoJSON exports. Shapefiles and KML files need converting
+first, e.g. at <https://mapshaper.org>: drop in the file (for a shapefile, all of its parts: `.shp`,
+`.shx`, `.dbf` and `.prj`), then Export → GeoJSON. While there:
+- Make sure it's in latitude/longitude. NYC data often comes in State Plane feet; in mapshaper, type
+  `-proj wgs84` in the console.
+- No need to simplify; the script does that.
 
 ---
 
