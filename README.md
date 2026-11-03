@@ -140,6 +140,31 @@ script. Keep them where you want those values to appear.
 
 ---
 
+## Embedding the portal on the Wix site
+
+In Wix: Add Elements → Embed Code → **Embed HTML** → Enter Code, and paste:
+
+```html
+<iframe src="https://swimcoalition.github.io/CWQT-Data-Portal/"
+        title="CWQT Data Portal: interactive map of water quality results"
+        style="width:100%; height:100%; border:0;" loading="lazy"></iframe>
+```
+
+Then drag the embed box to the size you want; the map fills it. Wix keeps a separate mobile layout,
+so switch the editor to mobile view and set the box there too (full width, about 600 px tall).
+Suggested desktop size: full content width, about 750 px tall.
+
+When the map is embedded, it behaves differently from when it's opened directly:
+- **Scrolling.** Scrolling or swiping over it moves the page, not the map. To move the map, people
+  use two fingers on a phone, or Ctrl/⌘ + scroll on a computer; a short message tells them so.
+- **Full screen.** An "Open full screen ↗" link opens the portal in its own tab.
+- **Charts & Graphics.** The button opens the charts page in a new tab, so it isn't squeezed into the
+  embed box. Opened directly, the portal opens it in the same tab.
+- **Starting view.** The map re-fits to show all sites whenever Wix resizes the box, until the visitor
+  moves it.
+
+---
+
 ## Map layers
 
 Besides the CWQT sites, the map's Layers menu offers the datasets in `data/`:

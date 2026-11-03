@@ -16,6 +16,10 @@
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <link rel="stylesheet" href="cwqt.css">
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<!-- When the map is embedded in another page (e.g. the Wix site): one finger / plain mouse wheel
+     scrolls the page instead of getting "stuck" moving the map -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet-gesture-handling@1.2.2/dist/leaflet-gesture-handling.min.css">
+<script src="https://unpkg.com/leaflet-gesture-handling@1.2.2/dist/leaflet-gesture-handling.min.js"></script>
 <style>
   body.map-page { display: flex; flex-direction: column; height: 100%; overflow: hidden; }
   #map { flex: 1; min-height: 0; background: #e4e7e8; font-family: var(--font-body); }
@@ -57,6 +61,8 @@
   .legend .row { margin: 3px 0; }
   .dot { display: inline-block; width: 11px; height: 11px; border-radius: 50%; margin-right: 7px; vertical-align: -1px; }
   .leaflet-control-scale-line { font-family: var(--font-body); }
+  .full-link { display: block; padding: 6px 10px; font: 600 12px var(--font-body); color: var(--brand); text-decoration: none; }
+  .full-link:hover { color: var(--link); }
   .leaflet-bar a { color: var(--ink); }
 
   /* Popups */
@@ -90,7 +96,7 @@
     <h1>Community Water Quality Testing Data Portal</h1>
 </div>
   <nav class="actions">
-    <a class="btn" href="charts.html" title="See all charts and graphics">
+    <a class="btn" id="charts-btn" href="charts.html" title="See all charts and graphics">
       <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M2 14h12M4 11V7M8 11V3M12 11V6"/></svg>
       <span class="long">Charts &amp; Graphics</span><span class="short">Charts</span>
     </a>
@@ -217,14 +223,44 @@
   }
 
   // ---------- map ----------
-  const map = L.map("map", { zoomControl: false, maxZoom: 18, tapTolerance: 20 });
+  const embedded = window.self !== window.top;          // shown inside another page (Wix)
+  const map = L.map("map", { zoomControl: false, maxZoom: 18, tapTolerance: 20,
+                             gestureHandling: embedded && !!L.Map.GestureHandling });
   window.cwqtMap = map;                  // handy for debugging in the browser console
   map.fitBounds(D.bounds, { padding: [10, 10] });
+  // Embedded pages are often created before their box has its final size (a box with no
+  // height makes the map zoom all the way in). Re-fit to all sites whenever the box changes
+  // size, until the visitor moves the map themselves.
+  let userMoved = false;
+  ["mousedown", "touchstart", "wheel", "keydown"].forEach(ev =>
+    document.getElementById("map").addEventListener(ev, () => { userMoved = true; }, { passive: true }));
+  if (window.ResizeObserver) {
+    new ResizeObserver(() => {
+      const s = document.getElementById("map").getBoundingClientRect();
+      if (s.width < 50 || s.height < 50) return;
+      map.invalidateSize();
+      if (!userMoved) map.fitBounds(D.bounds, { padding: [10, 10] });
+    }).observe(document.getElementById("map"));
+  }
   // Bottom-left: scale bar, with the zoom buttons stacked above it
   // (controls added later sit higher in a bottom corner).
   L.control.scale({ position: "bottomleft", metric: false }).addTo(map);
   map.attributionControl.setPrefix('<a href="https://leafletjs.com">Leaflet</a>');
   L.control.zoom({ position: "bottomleft" }).addTo(map);
+  if (embedded) {   // inside the Wix box, open the charts page in its own tab instead of the small box
+    const cb = document.getElementById("charts-btn");
+    cb.target = "_blank"; cb.rel = "noopener";
+  }
+  if (embedded) {   // a way out of the embed box to the full-size portal
+    const Full = L.Control.extend({ options: { position: "topleft" }, onAdd() {
+      const a = L.DomUtil.create("a", "panel full-link");
+      a.href = window.location.href.split("#")[0]; a.target = "_blank"; a.rel = "noopener";
+      a.innerHTML = 'Open full screen <span aria-hidden="true">↗</span>';
+      L.DomEvent.disableClickPropagation(a);
+      return a;
+    } });
+    map.addControl(new Full());
+  }
 
   // One shared canvas draws every site marker: far lighter than one SVG
   // element per marker. "tolerance" widens the tap target on touch screens.
