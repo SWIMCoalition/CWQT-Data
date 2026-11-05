@@ -3,7 +3,7 @@
 The **Community Water Quality Testing Data Portal**: an interactive map and charts of Enterococcus
 results from the CWQT program, based on the CWQT master Google Sheet.
 
-**Data Portal:** <https://SWIMCoalition.github.io/CWQT-Data-Portal/>
+**Data Portal:** <https://SWIMCoalition.github.io/CWQT-Data/>
 
 **More about CWQT:** <https://www.swimmablenyc.org/cwqt>
 
