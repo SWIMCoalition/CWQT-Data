@@ -14,7 +14,7 @@
    "properties": {
     "feature_id": "LAB-01",
     "name": "Billion Oyster Project Williamsburg Field Station",
-    "status": "Not active in 2025",
+    "status": "Not Active",
     "lab_contacts": "Lab Manager: Anna Weiss",
     "mymap_layer": "Partner Laboratories",
     "mymap_icon": "grey",
@@ -54,7 +54,7 @@
    "properties": {
     "feature_id": "LAB-03",
     "name": "Brooklyn College Lab",
-    "status": "Not active in 2025",
+    "status": "Not Active",
     "lab_contacts": "Lab Manager: Jennifer Cherrier; Lab Tech: Reese LeVea",
     "mymap_layer": "Partner Laboratories",
     "mymap_icon": "grey",
@@ -74,7 +74,7 @@
    "properties": {
     "feature_id": "LAB-04",
     "name": "Columbia University/Lamont-Doherty",
-    "status": "Not active in 2025",
+    "status": "Not Active",
     "lab_contacts": "Lab Coordinator: Wade McGillis",
     "mymap_layer": "Partner Laboratories",
     "mymap_icon": "grey",
@@ -154,7 +154,7 @@
    "properties": {
     "feature_id": "LAB-08",
     "name": "LaGuardia Community College Environmental Science Program",
-    "status": "Not active in 2025",
+    "status": "Not Active",
     "lab_contacts": "Lab Coordinator: Holly Porter-Morgan",
     "mymap_layer": "Partner Laboratories",
     "mymap_icon": "grey",
@@ -174,7 +174,7 @@
    "properties": {
     "feature_id": "LAB-09",
     "name": "Manhattan College",
-    "status": "Not active in 2025",
+    "status": "Not Active",
     "lab_contacts": "",
     "mymap_layer": "Partner Laboratories",
     "mymap_icon": "grey",
@@ -294,7 +294,7 @@
    "properties": {
     "feature_id": "LAB-15",
     "name": "St Francis College",
-    "status": "Not active in 2025",
+    "status": "Not Active",
     "lab_contacts": "Lab Coordinator: Victoria Ruiz",
     "mymap_layer": "Partner Laboratories",
     "mymap_icon": "grey",
@@ -314,7 +314,7 @@
    "properties": {
     "feature_id": "LAB-16",
     "name": "SUNY Maritime",
-    "status": "Not active in 2025",
+    "status": "Not Active",
     "lab_contacts": "Lab Coordinator: Caterina Panzeca",
     "mymap_layer": "Partner Laboratories",
     "mymap_icon": "grey",
@@ -334,7 +334,7 @@
    "properties": {
     "feature_id": "LAB-17",
     "name": "Urban Assembly NY Harbor School Marine Biology Research Program",
-    "status": "Not active in 2025",
+    "status": "Not Active",
     "lab_contacts": "",
     "mymap_layer": "Partner Laboratories",
     "mymap_icon": "grey",
