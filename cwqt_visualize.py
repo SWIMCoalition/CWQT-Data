@@ -8,7 +8,7 @@ and produces maps and charts of Enterococcus results.
 
     python cwqt_visualize.py CWQT_Master_Data_Sheet.xlsx
     python cwqt_visualize.py CWQT_Master_Data_Sheet.xlsx --out figures --window-end 2026-08-31
-    python cwqt_visualize.py CWQT_Master_Data_Sheet.xlsx --site-pngs      # also one PNG per site
+    python cwqt_visualize.py CWQT_Master_Data_Sheet.xlsx --site-pngs      # also each site's charts as PNGs
     python cwqt_visualize.py --sheet-id 1AbC...xyz     # download straight from Google Sheets
 
 Download the sheet from Google Sheets with File > Download > Microsoft Excel (.xlsx).
@@ -20,16 +20,21 @@ section below.
 Outputs (written to ./cwqt_outputs by default)
 ----------------------------------------------
   index.html                         Interactive map (the "Data Portal"): season layers, basemaps,
-                                     popups with a mini trend chart and a link to the site's PDF.
+                                     extra layers from data/ (partner labs, outfalls, green
+                                     infrastructure), popups with a mini trend chart, a link to the
+                                     site's PDF and a "See raw data" link.
+  layers/*.json                      Web-ready copies of the extra map layers.
   charts.html                        Page listing every chart with a short description.
   cwqt.css                           Shared look for both pages (copied from templates/).
   1_program_trend.png                Program-wide water quality by season, wet vs dry weather
-  2_site_by_season_heatmap.png       Every site x every season, colored by seasonal geomean
+  2_waterbody_comparison.png         Recent geomean by waterbody, one dot per site
   3_rainfall_effect.png              How results change with rainfall in the prior ~72 hours
-  4_waterbody_comparison.png         Recent geomean by waterbody, one dot per site
-  5_latest_30_day_status.png         Current 30-day geomean per site (what the GeoMean tabs show)
-  site_timeseries.pdf                One page per site: every regular-season sample, by season
-  sites/site-NNN.pdf                 The same page for each site on its own (linked from the map)
+  4_rain_recovery.png                How bacteria fall in the days after rain, by kind of waterbody
+  5_latest_30_days_by_waterbody.png  Latest 30-day geomean by waterbody, one dot per site
+  6_site_by_season_heatmap.png       Every site x every season, colored by seasonal geomean
+  site_timeseries.pdf                Every site, two pages each: (1) seasonal geomean by year,
+                                     (2) every regular-season sample, by season
+  sites/site-NNN.pdf                 The same two pages for each site on its own (linked from the map)
   tables/*.csv                       The numbers behind every chart (open in Sheets/Excel)
   data_quality_report.txt            Things in the workbook worth fixing
 
@@ -48,6 +53,7 @@ How values are treated (matches the workbook FAQ and the GeoMean tabs)
 from __future__ import annotations
 
 import argparse
+import csv
 import html
 import json
 import math
@@ -125,10 +131,6 @@ RECENT_SEASONS = 5
 SEASON_START = (5, 1)
 SEASON_END = (10, 5)
 
-# "Long-running sites" on the trend chart: sites with a seasonal geomean
-# (>= MIN_SAMPLES_FOR_GEOMEAN samples) in at least this many seasons.
-CORE_MIN_SEASONS = 10
-
 # Colors. Status colors are reserved for good / advisory / poor and are always
 # paired with a text label. SERIES is for ordinary data marks.
 COLOR_GOOD = "#0ca30c"
@@ -142,6 +144,24 @@ INK_2 = "#4f5d78"
 MUTED = "#8a93a6"
 GRID = "#e4e7ee"
 SURFACE = "#ffffff"
+
+# Kinds of waterbody, used by the "recovery after rain" chart. Waterbodies not listed count as
+# "Major rivers & harbor"; SITE_GROUP_OVERRIDES moves single sites (enclosed basins, inlets).
+WATERBODY_GROUPS = {
+    "Creeks, canals & basins": ["Newtown Creek", "Gowanus Canal", "Coney Island Creek", "Flushing Creek",
+                                "Bronx River", "Bronx Kill", "Hutchinson River", "Saw Mill River", "Rahway River"],
+    "Bays & coves": ["Flushing Bay", "Little Neck Bay", "Jamaica Bay", "Sheepshead Bay"],
+    "Lakes": ["Prospect Park Lake", "Meadow Lake", "Kissena Lake", "Willow Lake", "Van Cortlandt Park Lake"],
+}
+SITE_GROUP_OVERRIDES = {2: "Creeks, canals & basins",    # Wallabout Channel
+                        15: "Creeks, canals & basins",   # Anable Basin
+                        55: "Creeks, canals & basins",   # Bushwick Inlet
+                        74: "Creeks, canals & basins",   # Bush Terminal inner lagoon
+                        88: "Creeks, canals & basins",   # Hammond Creek
+                        27: "Creeks, canals & basins",   # Paerdegat Basin
+                        99: "Creeks, canals & basins"}   # Gerritsen Creek
+GROUP_COLORS = {"Major rivers & harbor": "#0d4ab2", "Creeks, canals & basins": "#eb6834",
+                "Bays & coves": "#2f9e8f"}               # checked for color-blind separation
 
 CATEGORY_LABELS = {
     "good": f"Good: geomean ≤ {GOOD_MAX}",
@@ -345,6 +365,13 @@ def load_samples(xlsx: Path, sites: pd.DataFrame, qa: list[QAIssue],
     use = rain_cols[:RAIN_DAYS]
     out["rain_in"] = rain[use].sum(axis=1, min_count=len(use))
     out["wet"] = np.where(out.rain_in.isna(), np.nan, out.rain_in >= WET_WEATHER_INCHES)
+    # Days since the last day with >= WET_WEATHER_INCHES (0 = the sampling day itself; one more than
+    # the number of rainfall columns = none in that week). Blank if that can't be told.
+    daily = rain.to_numpy(dtype=float) if len(rain_cols) else np.full((len(out), 0), np.nan)
+    hit = daily >= WET_WEATHER_INCHES
+    first = np.where(hit.any(axis=1), hit.argmax(axis=1),
+                     np.where(~np.isnan(daily).any(axis=1), daily.shape[1], np.nan))
+    out["days_since_rain"] = np.where(np.isnan(daily).all(axis=1), np.nan, first) if daily.shape[1] else np.nan
 
     out["year"] = out.date.dt.year
     md = out.date.dt.month * 100 + out.date.dt.day
@@ -622,15 +649,10 @@ def chart_program_trend(season, site_year, out: Path, tables: Path):
     per_season = season.groupby("year").size()
     years = [int(y) for y in per_season.index if per_season[y] >= MIN_SAMPLES_PER_SEASON]
     sy = site_year[(site_year.n >= MIN_SAMPLES_FOR_GEOMEAN) & site_year.year.isin(years)]
-    seasons_per_site = sy.groupby("site_id").year.nunique()
-    core = seasons_per_site[seasons_per_site >= CORE_MIN_SEASONS].index
-    syc = sy[sy.site_id.isin(core)]
 
     agg = sy.groupby("year").geomean.agg(
         median_site_geomean="median",
         q25=lambda x: x.quantile(0.25), q75=lambda x: x.quantile(0.75), n_sites="size")
-    agg["median_long_running_sites"] = syc.groupby("year").geomean.median()
-    agg["n_long_running_sites"] = syc.groupby("year").size()
     s = season[season.year.isin(years)].assign(over=lambda x: x.mpn > SINGLE_SAMPLE_LIMIT)
     agg["pct_over_all"] = s.groupby("year").over.mean() * 100
     agg["pct_over_dry"] = s[s.wet == 0].groupby("year").over.mean() * 100
@@ -646,18 +668,14 @@ def chart_program_trend(season, site_year, out: Path, tables: Path):
     _quality_bands(a1, tint=False)
     a1.fill_between(x, agg.q25, agg.q75, color=SERIES, alpha=0.10, lw=0, zorder=2)
     a1.plot(x, agg.median_site_geomean, color=SERIES, lw=2, marker="o", ms=5, mec=SURFACE,
-            mew=1.5, zorder=4, label="All sites sampled that season (median; band = middle 50%)")
-    a1.plot(x, agg.median_long_running_sites, color=MUTED, lw=1.8, marker="o", ms=4, mec=SURFACE,
-            mew=1.2, zorder=3, label=f"Only the {len(core)} long-running sites (median)")
+            mew=1.5, zorder=4)
     a1.annotate(f"{agg.median_site_geomean.iloc[-1]:,.0f}",
                 (x[-1], agg.median_site_geomean.iloc[-1]), xytext=(8, 0),
                 textcoords="offset points", va="center", fontsize=9, color=INK, fontweight="bold")
     a1.set_ylabel("Seasonal geometric mean\n(MPN / 100 ml, log scale)")
     a1.set_title("Typical site water quality, by season", pad=28)
-    _subtitle(a1, f"Each site's seasonal geomean needs ≥{MIN_SAMPLES_FOR_GEOMEAN} samples. "
-                  f"Long-running = a seasonal geomean in ≥{CORE_MIN_SEASONS} seasons, so the "
-                  f"gray line isn't affected by sites being added.")
-    a1.legend(loc="upper left", fontsize=8.5, handlelength=1.6)
+    _subtitle(a1, f"Line = the median site; shaded band = the middle 50% of sites. Each site's "
+                  f"seasonal geomean needs ≥{MIN_SAMPLES_FOR_GEOMEAN} samples.")
     a1.set_xlim(x.min() - 0.5, x.max() + 0.7)
     a1.grid(axis="x", visible=False)
 
@@ -691,7 +709,7 @@ def chart_program_trend(season, site_year, out: Path, tables: Path):
     plt.close(fig)
 
 
-# ---- 2. Site x season heatmap ----------------------------------------------
+# ---- 6. Site x season heatmap ----------------------------------------------
 
 def chart_site_heatmap(site_year, sites, out: Path, tables: Path):
     sy = site_year.merge(sites[["site_id", "site", "waterbody"]], on="site_id")
@@ -826,7 +844,7 @@ def chart_rainfall(season, out: Path, tables: Path):
     plt.close(fig)
 
 
-# ---- 4. Waterbody comparison ------------------------------------------------
+# ---- 2. Waterbody comparison ------------------------------------------------
 
 def _right_col(ax, y, text, x=1.01, **kw):
     kw.setdefault("fontsize", 8)
@@ -876,34 +894,92 @@ def chart_waterbodies(season, out: Path, tables: Path):
     plt.close(fig)
 
 
-# ---- 5. Latest 30-day status -----------------------------------------------
+# ---- 4. Recovery after rain ------------------------------------------------
 
-def chart_latest_window(win, sites, out: Path):
-    w = win.merge(sites[["site_id", "site", "waterbody"]], on="site_id").sort_values("geomean")
+def waterbody_group(site_id, waterbody) -> str:
+    if int(site_id) in SITE_GROUP_OVERRIDES:
+        return SITE_GROUP_OVERRIDES[int(site_id)]
+    return next((g for g, wbs in WATERBODY_GROUPS.items() if waterbody in wbs), "Major rivers & harbor")
+
+
+def chart_rain_recovery(season, out: Path, tables: Path):
+    d = season.dropna(subset=["days_since_rain"]).copy()
+    d["k"] = d.days_since_rain.astype(int)
+    d["group"] = [waterbody_group(i, w) for i, w in zip(d.site_id, d.waterbody)]
+    kmax = len(RAIN_COLS)
+    fig, ax = plt.subplots(figsize=(10.5, 4.8))
+    _mpn_axis(ax)
+    ax.set_ylim(MPN_FLOOR, 3000)
+    ax.set_xlim(-0.5, kmax + 0.5)
+    _quality_bands(ax)
+    rows = []
+    for gname, color in GROUP_COLORS.items():
+        g = d[d.group == gname].groupby("k").mpn.agg(["size", geomean])
+        g = g[g["size"] >= 25]
+        ax.plot(g.index, g["geomean"], color=color, lw=2, marker="o", ms=5, mec=SURFACE, mew=1.2,
+                label=gname, zorder=3)
+        rows += [{"group": gname, "days_since_rain": k, "n_samples": int(r["size"]), "geomean": r["geomean"]}
+                 for k, r in g.iterrows()]
+    allg = d.groupby("k").mpn.agg(n="size", geomean=geomean,
+                                  pct_over=lambda v: 100 * (v > SINGLE_SAMPLE_LIMIT).mean())
+    rows += [{"group": "All sites", "days_since_rain": k, "n_samples": int(r.n), "geomean": r.geomean,
+              "pct_over_limit": r.pct_over} for k, r in allg.iterrows()]
+    _r(pd.DataFrame(rows)).to_csv(tables / "rain_recovery.csv", index=False)
+    labels = ["Same\nday"] + [f"{k} day{'s' if k > 1 else ''}" for k in range(1, kmax)] + \
+             [f"No rain\nin {kmax} days"]
+    ax.set_xticks(range(kmax + 1))
+    ax.set_xticklabels(labels)
+    for k, r in allg.iterrows():
+        ax.text(k, 8.3, f"{r.pct_over:.0f}%", ha="center", fontsize=8, color=INK_2)
+    ax.text(-0.45, 11, f"% of all samples over {SINGLE_SAMPLE_LIMIT}:", fontsize=7.6, color=INK_2, ha="left")
+    ax.grid(axis="x", visible=False)
+    ax.set_xlabel(f"Days since the last day with ≥{WET_WEATHER_INCHES}\" of rain (Central Park)")
+    ax.set_ylabel("Geometric mean\n(MPN / 100 ml, log scale)")
+    ax.set_title("How long after rain does water quality recover?", pad=28)
+    _subtitle(ax, "Regular-season samples. “Same day” rain may have fallen after the sample was taken.")
+    ax.legend(loc="upper right", fontsize=8)
+    _brand_footer(fig)
+    fig.savefig(out)
+    plt.close(fig)
+
+
+# ---- 5. Latest 30 days, by waterbody ----------------------------------------
+
+def chart_latest_window(samples, win, out: Path, tables: Path):
     start, end = win.window_start.iloc[0], win.window_end.iloc[0]
-    fig_h = 0.2 * len(w) + 1.6
-    fig, ax = plt.subplots(figsize=(10, fig_h))
+    s = samples[(samples.date >= start) & (samples.date <= end)]
+    site_gm = s.groupby(["waterbody", "site_id"]).mpn.agg(gm=geomean, n="size").reset_index()
+    wb = s.groupby("waterbody").agg(geomean=("mpn", geomean), n_samples=("mpn", "size"),
+                                    n_sites=("site_id", "nunique"),
+                                    pct_over=("mpn", lambda v: 100 * (v > SINGLE_SAMPLE_LIMIT).mean()))
+    wb = wb.sort_values("geomean")
+    wb.assign(window_start=start, window_end=end).pipe(_r).to_csv(tables / "latest_30_days_by_waterbody.csv")
+
+    fig, ax = plt.subplots(figsize=(10, 0.3 * len(wb) + 1.6))
     _mpn_axis(ax, "x")
-    y = np.arange(len(w))
-    ax.set_ylim(len(w) - 0.4, -0.8)
+    ax.set_ylim(len(wb) - 0.4, -0.6)
     _quality_bands(ax, axis="x")
-    full = (w.n >= MIN_SAMPLES_FOR_GEOMEAN).values
-    ax.hlines(y, MPN_FLOOR, w.geomean, color=GRID, lw=0.8, zorder=1)
-    ax.scatter(w.geomean[full], y[full], s=40, color=SERIES, edgecolor=SURFACE, lw=1.5, zorder=3)
-    ax.scatter(w.geomean[~full], y[~full], s=40, facecolor=SURFACE, edgecolor=SERIES, lw=1.5, zorder=3)
-    _right_col(ax, -1.2, "Geomean", color=INK, fontweight="bold")
-    _right_col(ax, -1.2, "Samples", x=1.1, color=INK, fontweight="bold")
-    for yi, (_, r) in zip(y, w.iterrows()):
-        _right_col(ax, yi, f"{r.geomean:,.0f}", color=INK, fontsize=7.5)
-        _right_col(ax, yi, f"{r.n}", x=1.1, fontsize=7.5)
+    ypos = {w: i for i, w in enumerate(wb.index)}
+    ax.scatter(site_gm.gm, site_gm.waterbody.map(ypos), s=22, color=SERIES, alpha=0.35, lw=0, zorder=2)
+    full = (wb.n_samples >= MIN_SAMPLES_FOR_GEOMEAN).values
+    y = np.arange(len(wb))
+    ax.scatter(wb.geomean[full], y[full], s=70, color=SERIES, edgecolor=SURFACE, lw=2, zorder=3)
+    ax.scatter(wb.geomean[~full], y[~full], s=70, facecolor=SURFACE, edgecolor=SERIES, lw=2, zorder=3)
+    _right_col(ax, -1.0, "Geomean", color=INK, fontweight="bold")
+    _right_col(ax, -1.0, f"% over {SINGLE_SAMPLE_LIMIT}", x=1.095, color=INK, fontweight="bold")
+    _right_col(ax, -1.0, "Sites · samples", x=1.2, color=INK, fontweight="bold")
+    for i, (w, r) in enumerate(wb.iterrows()):
+        _right_col(ax, i, f"{r.geomean:,.0f}", color=INK, fontsize=8.5)
+        _right_col(ax, i, f"{r.pct_over:.0f}%", x=1.095)
+        _right_col(ax, i, f"{int(r.n_sites)} · {int(r.n_samples)}", x=1.2)
     ax.set_yticks(y)
-    ax.set_yticklabels(w.site, fontsize=7.2)
+    ax.set_yticklabels(wb.index, fontsize=8.5)
     ax.tick_params(axis="y", length=0)
     ax.grid(axis="y", visible=False)
     ax.set_xlabel("30-day geometric mean, MPN / 100 ml (log scale)")
-    ax.set_title(f"30-day geometric mean, {start:%b %-d} – {end:%b %-d, %Y}", pad=44)
-    ax.annotate(f"Same calculation as the GeoMean tabs. Cleanest at top. Hollow dot = fewer than "
-                f"{MIN_SAMPLES_FOR_GEOMEAN} samples in the window.", xy=(0, 1),
+    ax.set_title(f"Water quality over the latest 30 days, {start:%b %-d} – {end:%b %-d, %Y}", pad=44)
+    ax.annotate(f"Large dot = all samples in the waterbody; small dots = individual sites. Cleanest at top. "
+                f"Hollow dot = fewer than {MIN_SAMPLES_FOR_GEOMEAN} samples.", xy=(0, 1),
                 xycoords="axes fraction", xytext=(0, 24), textcoords="offset points",
                 fontsize=8.8, color=INK_2)
     _brand_footer(fig)
@@ -911,7 +987,7 @@ def chart_latest_window(win, sites, out: Path):
     plt.close(fig)
 
 
-# ---- 6. Per-site time series PDF -------------------------------------------
+# ---- 7. Per-site time series PDF -------------------------------------------
 
 def _season_x(dates: pd.Series, seasons: list[int]) -> pd.Series:
     """Place each date inside its season's slot: season i spans x = i .. i+1."""
@@ -926,6 +1002,58 @@ def _season_x(dates: pd.Series, seasons: list[int]) -> pd.Series:
 def site_pdf_name(site_id: int) -> str:
     """Path (relative to the output folder) of a site's own time-series PDF."""
     return f"sites/site-{int(site_id):03d}.pdf"
+
+
+def site_geomean_chart(g, srow, heading: str, place: str):
+    """Page 1 of each site's PDF: the seasonal geometric mean as a simple line over the years,
+    each point colored good / advisory / poor and labeled with its value."""
+    by = g.groupby("year").mpn.agg(gm=geomean, n="size").reset_index()
+    by["year"] = by.year.astype(int)
+    years = list(range(int(by.year.min()), int(by.year.max()) + 1))
+    fig, ax = plt.subplots(figsize=(11, 4.8))
+    _mpn_axis(ax)
+    top = 5000 if by.gm.max() < 2500 else MPN_CEIL
+    ax.set_ylim(MPN_FLOOR, top)
+    ax.set_xlim(years[0] - 0.6, years[-1] + 0.6)
+    _quality_bands(ax)
+    # line, broken where a season wasn't sampled
+    run = [by.iloc[0]]
+    for (_, a), (_, b) in zip(by.iterrows(), by.iloc[1:].iterrows()):
+        if b.year - a.year == 1:
+            run.append(b)
+        else:
+            ax.plot([r.year for r in run], [r.gm for r in run], color=SERIES, lw=2, zorder=3,
+                    solid_capstyle="round")
+            run = [b]
+    ax.plot([r.year for r in run], [r.gm for r in run], color=SERIES, lw=2, zorder=3,
+            solid_capstyle="round")
+    for _, r in by.iterrows():
+        c = CATEGORY_COLORS[category(r.gm)]
+        few = r.n < MIN_SAMPLES_FOR_GEOMEAN
+        ax.scatter([r.year], [r.gm], s=70, zorder=4, linewidths=2 if few else 1.5,
+                   facecolor=SURFACE if few else c, edgecolor=c if few else SURFACE)
+        ax.annotate(f"{r.gm:,.0f}", (r.year, r.gm), xytext=(0, 9), textcoords="offset points",
+                    ha="center", va="bottom", fontsize=8.5, color=INK, zorder=5,
+                    bbox=dict(boxstyle="square,pad=0.1", fc=SURFACE, ec="none", alpha=0.7))
+    sampled = set(by.year)
+    ax.set_xticks(years)
+    ax.set_xticklabels([str(y) for y in years], fontsize=8.5 if len(years) < 14 else 7.8)
+    for lab, y in zip(ax.get_xticklabels(), years):
+        if y not in sampled:
+            lab.set_color("#b3b9c6")
+    ax.grid(axis="x", visible=False)
+    ax.set_ylabel("Seasonal geometric mean\n(MPN / 100 ml, log scale)")
+    ax.set_xlabel("Season  (gray year = not sampled)" if len(sampled) < len(years) else "Season", fontsize=8.5)
+    ax.set_title(heading, pad=28)
+    _subtitle(ax, f"{place} · Site ID {srow.site_id} · Seasonal geometric mean of each season's "
+                  f"regular samples (May–early October)")
+    handles = [Line2D([], [], marker="o", ls="", ms=8, mfc=CATEGORY_COLORS[k], mec=SURFACE,
+                      label=CATEGORY_LABELS[k]) for k in ("good", "advisory", "poor")]
+    handles.append(Line2D([], [], marker="o", ls="", ms=8, mfc=SURFACE, mec=INK_2, mew=1.8,
+                          label=f"Fewer than {MIN_SAMPLES_FOR_GEOMEAN} samples that season"))
+    ax.legend(handles=handles, loc="upper left", bbox_to_anchor=(0, -0.2), ncols=4, fontsize=8)
+    _brand_footer(fig, logo_height_in=0.32)
+    return fig
 
 
 def site_timeseries_pdf(samples, sites, out: Path, png_dir: Path | None = None) -> dict[int, str]:
@@ -944,7 +1072,10 @@ def site_timeseries_pdf(samples, sites, out: Path, png_dir: Path | None = None) 
             seasons = sorted(int(y) for y in g.year.unique())
             gx = g.assign(x=_season_x(g.date, seasons))
 
-            fig, ax = plt.subplots(figsize=(11, 4.8))
+            heading, place = popup_heading(srow.site, srow.waterbody, srow.borough, srow.neighborhood)
+            fig1 = site_geomean_chart(g, srow, heading, place)        # page 1: simple line
+
+            fig, ax = plt.subplots(figsize=(11, 4.8))                  # page 2: every sample
             _mpn_axis(ax)
             ax.set_xlim(0, len(seasons))
             _quality_bands(ax)
@@ -970,8 +1101,7 @@ def site_timeseries_pdf(samples, sites, out: Path, png_dir: Path | None = None) 
             ax.grid(axis="x", visible=False)
             ax.set_xlabel("Season  (number underneath = that season's geometric mean)", fontsize=8.5)
             ax.set_ylabel("Enterococcus, MPN / 100 ml (log)")
-            heading, place = popup_heading(srow.site, srow.waterbody, srow.borough, srow.neighborhood)
-            ax.set_title(heading, pad=28)
+            ax.set_title(f"{heading}: every sample", pad=28)
             st = summarize(g)
             cls = f" · DEC class {srow.dec_class}" if srow.dec_class else ""
             off = len(allg) - len(g)
@@ -985,13 +1115,17 @@ def site_timeseries_pdf(samples, sites, out: Path, png_dir: Path | None = None) 
             ax.legend(handles, labels_, loc="upper left", bbox_to_anchor=(0, -0.2), ncols=4,
                       fontsize=8)
             _brand_footer(fig, logo_height_in=0.32)
-            pdf.savefig(fig)
             rel = site_pdf_name(srow.site_id)
-            fig.savefig(out.parent / rel)
+            with PdfPages(out.parent / rel) as one:       # the site's own two-page PDF
+                for f_ in (fig1, fig):
+                    one.savefig(f_)
+                    pdf.savefig(f_)
             made[int(srow.site_id)] = rel
             if png_dir is not None:
                 fn = re.sub(r"[^A-Za-z0-9]+", "_", f"{srow.site_id:03d}_{srow.site}").strip("_")
-                fig.savefig(png_dir / f"{fn}.png")
+                fig1.savefig(png_dir / f"{fn}_geomean.png")
+                fig.savefig(png_dir / f"{fn}_samples.png")
+            plt.close(fig1)
             plt.close(fig)
     return made
 
@@ -1070,6 +1204,8 @@ def make_favicons(emblem: Path, out: Path):
     sq = Image.new("RGBA", (side, side), (0, 0, 0, 0))
     sq.paste(im, ((side - im.width) // 2, (side - im.height) // 2), im)
     sq.resize((32, 32), Image.LANCZOS).save(out / "favicon-32.png", optimize=True)
+    (out / "assets").mkdir(exist_ok=True)
+    sq.resize((192, 192), Image.LANCZOS).save(out / "assets" / "swim-emblem-192.png", optimize=True)
     sq.save(out / "favicon.ico", sizes=[(16, 16), (32, 32), (48, 48)])
     touch = Image.new("RGBA", (side, side), (255, 255, 255, 255))
     pad = int(side * 0.12)
@@ -1132,6 +1268,27 @@ def popup_heading(site: str, waterbody: str, borough: str, town: str) -> tuple[s
 # ---- Extra map layers from data/ ------------------------------------------------
 
 DATA_DIR = Path(__file__).resolve().parent / "data"
+
+
+# Per-site links to each site's raw results sheet ("See raw data" in the map popups).
+# Any CSV in data/ matching this name, with a site_id column and a link column.
+SITE_LINKS_FILE = "CWQT_Sites_GoogleMyMap*.csv"
+SITE_LINKS_COLUMN = "results_sheet_url"
+
+
+def load_site_links() -> dict[int, str]:
+    """{site_id: raw-results link} from data/CWQT_Sites_GoogleMyMap.csv (newest match wins)."""
+    matches = sorted(DATA_DIR.glob(SITE_LINKS_FILE))
+    if not matches:
+        return {}
+    links = {}
+    with open(matches[-1], newline="", encoding="utf-8-sig") as fh:
+        for r in csv.DictReader(fh):
+            sid_, url = (r.get("site_id") or "").strip(), (r.get(SITE_LINKS_COLUMN) or "").strip()
+            if re.fullmatch(r"\d+", sid_) and url.startswith("https://"):
+                links[int(sid_)] = url
+    print(f"  raw-data links for {len(links)} sites from {matches[-1].name}")
+    return links
 
 
 def _simplify(points, tol):
@@ -1209,7 +1366,8 @@ def build_data_layers(out: Path) -> list[dict]:
             continue
         cats = L.get("categories")
         values = L.get("values", {})
-        keep = [k for k in [L.get("title")] + list(L.get("fields", {})) if k]
+        keep = [k for k in [L.get("title"), L.get("subtitle"), L.get("contacts")] + list(L.get("fields", {})) if k]
+        where = L.get("where")
         if cats and cats["field"] not in keep:
             keep.append(cats["field"])
         # Compact format: every distinct value is stored once in "s" and features refer to it
@@ -1230,6 +1388,12 @@ def build_data_layers(out: Path) -> list[dict]:
                 if not g or not g.get("coordinates"):
                     continue
                 raw = feat.get("properties") or {}
+                if where:   # e.g. only labs whose status is "Active"
+                    wv = str(_clean_value(raw.get(where["field"])) or "")
+                    if "equals" in where and wv != str(where["equals"]):
+                        continue
+                    if "not_equals" in where and wv == str(where["not_equals"]):
+                        continue
                 vals = []
                 for k in keep:
                     v = _clean_value(raw.get(k))
@@ -1254,6 +1418,7 @@ def build_data_layers(out: Path) -> list[dict]:
             "id": L["id"], "group": L.get("group", "Other layers"), "name": L["name"],
             "url": f"layers/{L['id']}.json", "title": L.get("title"),
             "titlePrefix": L.get("titlePrefix", ""),
+            "subtitle": L.get("subtitle"), "contacts": L.get("contacts"), "hover": bool(L.get("hover")),
             "fields": [[k, lab] for k, lab in L.get("fields", {}).items()],
             "style": L.get("style", {}), "minZoom": L.get("minZoom", 0), "on": bool(L.get("on")),
             "kind": "point" if points else "shape",
@@ -1328,6 +1493,7 @@ def build_map(season, sites, site_all, site_year, win, pdfs: dict, logo: str, ou
                   for sid, g in site_year.sort_values("year").groupby("site_id")},
         "overall": {int(r.site_id): _num(r.geomean) for r in site_all.itertuples()},
         "pdfs": {sid: rel for sid, rel in pdfs.items() if sid in ids},
+        "raw": {sid: url for sid, url in load_site_links().items() if sid in ids},
         "layers": layers,
         "years": [y0, y1],
         "cfg": {"good": GOOD_MAX, "adv": ADVISORY_MAX, "limit": SINGLE_SAMPLE_LIMIT,
@@ -1451,7 +1617,7 @@ def main(argv=None):
                     help="average lab/field split results recorded in Notes (per the FAQ). "
                          "Off by default so numbers match the GeoMean tabs.")
     ap.add_argument("--site-pngs", action="store_true",
-                    help="also save one PNG per site (in addition to the PDF)")
+                    help="also save each site's two charts as PNGs (in addition to the PDF)")
     ap.add_argument("--no-map", action="store_true", help="skip the web pages (map and charts page)")
     args = ap.parse_args(argv)
 
@@ -1491,10 +1657,11 @@ def main(argv=None):
 
     steps = [
         ("1_program_trend.png", lambda p: chart_program_trend(season, site_year, p, tables)),
-        ("2_site_by_season_heatmap.png", lambda p: chart_site_heatmap(site_year, sites, p, tables)),
+        ("2_waterbody_comparison.png", lambda p: chart_waterbodies(season, p, tables)),
         ("3_rainfall_effect.png", lambda p: chart_rainfall(season, p, tables)),
-        ("4_waterbody_comparison.png", lambda p: chart_waterbodies(season, p, tables)),
-        ("5_latest_30_day_status.png", lambda p: chart_latest_window(win, sites, p)),
+        ("4_rain_recovery.png", lambda p: chart_rain_recovery(season, p, tables)),
+        ("5_latest_30_days_by_waterbody.png", lambda p: chart_latest_window(samples, win, p, tables)),
+        ("6_site_by_season_heatmap.png", lambda p: chart_site_heatmap(site_year, sites, p, tables)),
     ]
     for name, fn in steps:
         fn(out / name)

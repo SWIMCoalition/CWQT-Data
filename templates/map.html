@@ -74,7 +74,10 @@
   .pop td { padding: 1px 0; vertical-align: top; }
   .pop td:first-child { padding-right: 10px; }
   .pop svg { width: 100%; height: auto; display: block; }
-  .ts-link { display: inline-block; margin-top: 8px; font-weight: 600; text-decoration: none; }
+  .pop-links { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; margin-top: 8px; }
+  .ts-link { display: inline-block; font-weight: 600; text-decoration: none; }
+  .lab-icon { background: none; border: 0; }
+  .lab-icon svg { display: block; filter: drop-shadow(0 0 1px #fff) drop-shadow(0 1px 1px rgba(0,0,0,.25)); }
   .ts-link:hover { text-decoration: underline; }
 
   .leaflet-control-attribution { font-size: 10px; }
@@ -171,26 +174,35 @@
 
   // ---------- popup ----------
   function sparkline(pts) {
-    const w = 250, h = 74, pl = 4, pr = 4, pt = 6, pb = 14, [y0, y1] = D.years;
+    // Seasonal geomean by year: points colored good / advisory / poor, a tick for every
+    // season and a label every other year.
+    const w = 270, h = 96, pl = 14, pr = 14, pt = 6, pb = 26, [y0, y1] = D.years;   // side room for the year labels
     const lo = Math.log10(C.floor), hi = Math.log10(5000);
     const X = y => pl + (w - pl - pr) * ((y - y0) / Math.max(1, y1 - y0));
     const Y = v => { v = Math.min(Math.max(v, C.floor), 5000);
                      return pt + (h - pt - pb) * (1 - (Math.log10(v) - lo) / (hi - lo)); };
+    const base = h - pb;
     let s = `<svg viewBox="0 0 ${w} ${h}" role="img" aria-label="Seasonal geometric mean, ${y0} to ${y1}">`;
     [[C.floor, C.good, "good"], [C.good, C.adv, "advisory"], [C.adv, 5000, "poor"]].forEach(([a, b, k]) => {
-      s += `<rect x="${pl}" y="${Y(b).toFixed(1)}" width="${w - pl - pr}" height="${(Y(a) - Y(b)).toFixed(1)}" fill="${C.colors[k]}" fill-opacity="0.10"/>`;
+      s += `<rect x="${pl}" y="${Y(b).toFixed(1)}" width="${w - pl - pr}" height="${(Y(a) - Y(b)).toFixed(1)}" fill="${C.colors[k]}" fill-opacity="0.09"/>`;
     });
+    s += `<line x1="${pl}" y1="${base}" x2="${w - pr}" y2="${base}" stroke="#c9ced8" stroke-width="1"/>`;
+    const sampled = new Set(pts.map(p => p[0]));
+    for (let y = y0; y <= y1; y++) {
+      const x = X(y).toFixed(1), lab = (y1 - y) % 2 === 0;   // counted back from the latest season, so it's always labeled
+      s += `<line x1="${x}" y1="${base}" x2="${x}" y2="${base + (lab ? 4 : 2.5)}" stroke="#9aa3b5" stroke-width="1"/>`;
+      if (lab) s += `<text x="${x}" y="${base + 14}" font-size="9" fill="${sampled.has(y) ? C.ink2 : "#a7aebd"}" text-anchor="middle">${y}</text>`;
+    }
     for (let i = 1; i < pts.length; i++) {
       if (pts[i][0] - pts[i-1][0] === 1) {
-        s += `<line x1="${X(pts[i-1][0]).toFixed(1)}" y1="${Y(pts[i-1][1]).toFixed(1)}" x2="${X(pts[i][0]).toFixed(1)}" y2="${Y(pts[i][1]).toFixed(1)}" stroke="${C.series}" stroke-width="2" stroke-linecap="round"/>`;
+        s += `<line x1="${X(pts[i-1][0]).toFixed(1)}" y1="${Y(pts[i-1][1]).toFixed(1)}" x2="${X(pts[i][0]).toFixed(1)}" y2="${Y(pts[i][1]).toFixed(1)}" stroke="#9aa3b5" stroke-width="1.5" stroke-linecap="round"/>`;
       }
     }
     pts.forEach(([y, v]) => {
-      s += `<circle cx="${X(y).toFixed(1)}" cy="${Y(v).toFixed(1)}" r="3.5" fill="${C.series}" stroke="#fff" stroke-width="1.5"><title>${y}: ${fmt(v)}</title></circle>`;
+      const k = category(v);
+      s += `<circle cx="${X(y).toFixed(1)}" cy="${Y(v).toFixed(1)}" r="4" fill="${C.colors[k]}" stroke="#fff" stroke-width="1.5"><title>${y}: ${fmt(v)} (${esc(C.labels[k].split(":")[0])})</title></circle>`;
     });
-    s += `<text x="${pl}" y="${h - 2}" font-size="10" fill="${C.ink2}">${y0}</text>`;
-    s += `<text x="${w - pr}" y="${h - 2}" font-size="10" fill="${C.ink2}" text-anchor="end">${y1}</text></svg>`;
-    return s;
+    return s + "</svg>";
   }
 
   function popup(r, layerLabel) {
@@ -204,6 +216,7 @@
     const wetdry = (nd || nw) ? `<tr><td>Geomean, dry / wet weather</td><td>${fmt(gmd)} (n=${nd}) / ${fmt(gmw)} (n=${nw})</td></tr>` : "";
     const few = n < C.minN ? `<div class="muted" style="margin-top:4px">Only ${n} sample${n !== 1 ? "s" : ""}; a geomean needs ≥${C.minN} to compare with standards.</div>` : "";
     const pdf = D.pdfs[id] ? `<a class="ts-link" href="${esc(D.pdfs[id])}" target="_blank" rel="noopener">See full time series →</a>` : "";
+    const raw = D.raw && D.raw[id] ? `<a class="ts-link" href="${esc(D.raw[id])}" target="_blank" rel="noopener">See raw data →</a>` : "";
     return `<div class="pop">
       <div class="name">${esc(title)}</div>
       <div class="muted" style="margin-bottom:6px">${esc(place)} · Site ID ${id}</div>
@@ -218,7 +231,7 @@
       </table>${few}
       <div class="muted" style="margin-top:8px">Seasonal geomean, all years (overall ${fmt(D.overall[id])}):</div>
       ${sparkline(D.trend[id] || [])}
-      ${pdf}
+      <div class="pop-links">${pdf}${raw}</div>
     </div>`;
   }
 
@@ -314,13 +327,37 @@
     if (meta.categories) return meta.categories.classes[Math.min(f.properties._c, meta.categories.classes.length - 1)].color;
     return meta.style.color || "#555";
   }
+  function featureTitle(meta, p) {
+    return meta.title && p[meta.title] !== undefined ? meta.titlePrefix + p[meta.title] : meta.name;
+  }
+  // "Lab Manager: Anna Weiss; Lab Tech: Reese LeVea" -> one table row per person
+  function contactRows(text) {
+    return String(text || "").split(";").map(x => x.trim()).filter(Boolean).map(part => {
+      const i = part.indexOf(":");
+      return i > 0 ? [part.slice(0, i).trim(), part.slice(i + 1).trim()] : ["Contact", part];
+    });
+  }
   function featurePopup(meta, f) {
     const p = f.properties;
-    const head = meta.title && p[meta.title] !== undefined ? esc(meta.titlePrefix + p[meta.title]) : esc(meta.name);
-    const rows = meta.fields.filter(([k]) => p[k] !== undefined && p[k] !== "")
+    const sub = meta.subtitle && p[meta.subtitle] ? `${meta.group} · ${p[meta.subtitle]}` : meta.name;
+    let rows = meta.fields.filter(([k]) => p[k] !== undefined && p[k] !== "")
       .map(([k, lab]) => `<tr><td>${esc(lab)}</td><td>${esc(p[k])}</td></tr>`).join("");
-    return `<div class="pop"><div class="name">${head}</div>
-      <div class="muted" style="margin-bottom:6px">${esc(meta.name)}</div><table>${rows}</table></div>`;
+    if (meta.contacts) {
+      const c = contactRows(p[meta.contacts]);
+      rows += c.length ? c.map(([role, who]) => `<tr><td>${esc(role)}</td><td>${esc(who)}</td></tr>`).join("")
+                       : `<tr><td colspan="2" class="muted">No lab contacts listed</td></tr>`;
+    }
+    return `<div class="pop"><div class="name">${esc(featureTitle(meta, p))}</div>
+      <div class="muted" style="margin-bottom:6px">${esc(sub)}</div><table>${rows}</table></div>`;
+  }
+  // Icons for layers with style.icon (drawn as small images, not dots)
+  const ICONS = {
+    // flask: white glass, outlined and filled to the shoulder in the layer color
+    flask: c => `<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M7.6 2.6h4.8M8.4 2.6v4.8L3.6 15.4a1.6 1.6 0 0 0 1.4 2.4h10a1.6 1.6 0 0 0 1.4-2.4L11.6 7.4V2.6" fill="#fff" stroke="${c}" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/><path d="M5.6 12.4h8.8l2 3a1.6 1.6 0 0 1-1.4 2.4H5a1.6 1.6 0 0 1-1.4-2.4z" fill="${c}"/></svg>`,
+  };
+  function iconSvg(meta, size) {
+    const st = meta.style || {}, draw = ICONS[st.icon] || ICONS.flask;
+    return draw(st.color || "#555").replace("<svg ", `<svg width="${size}" height="${size}" `);
   }
   // Layer files are stored compactly (see build_data_layers in the script):
   // d.k = field names, d.s = distinct values, d.f = [[geometry or [lon, lat]], [value numbers], category?]
@@ -335,14 +372,27 @@
     const m = L.circleMarker([row[0][1], row[0][0]], { renderer, radius: st.radius || 3, color: "#ffffff", weight: 0.6,
       fillColor: extraColor(meta, { properties: { _c: row[2] } }), fillOpacity: 0.9 });
     m._row = i;
+    if (canHover && meta.hover) m.bindTooltip(esc(featureTitle(meta, rowProps(d, row))));
     return m;
   }
   function buildExtra(meta, d) {
     let g;
-    if (d.p) {
+    if (meta.style && meta.style.icon) {
+      // Icon layers (e.g. partner labs): few features, so every one is drawn as an icon
+      const size = meta.style.size || 20;
+      const icon = L.divIcon({ className: "lab-icon", html: iconSvg(meta, size), iconSize: [size, size], iconAnchor: [size / 2, size / 2] });
+      g = L.featureGroup();   // featureGroup (not layerGroup) so marker clicks reach g.on("click")
+      d.f.forEach((row, i) => {
+        const mk = L.marker([row[0][1], row[0][0]], { icon, alt: featureTitle(meta, rowProps(d, row)) });
+        mk._row = i;
+        if (canHover && meta.hover) mk.bindTooltip(esc(featureTitle(meta, rowProps(d, row))), { direction: "top", offset: [0, -size / 2] });
+        g.addLayer(mk);
+      });
+      g.on("click", e => openFeature(meta, rowProps(d, d.f[e.layer._row]), e.layer.getLatLng()));
+    } else if (d.p) {
       // Point layers: keep the compact rows and only create markers for what's on screen
       // (refreshed after every pan/zoom), so thousands of points don't fill memory.
-      g = L.layerGroup();
+      g = L.featureGroup();
       g._d = d; g._meta = meta;
       g.on("click", e => openFeature(meta, rowProps(d, d.f[e.layer._row]), e.latlng));
     } else {
@@ -355,16 +405,19 @@
     }
     return g;
   }
+  // Only the difference is updated after a pan/zoom: points that left the view are removed,
+  // points that entered it are created; points still in view are kept as they are.
   function refreshPoints(g) {
     if (!g._d || !map.hasLayer(g)) return;
-    const b = map.getBounds().pad(0.25), d = g._d;
-    g.clearLayers();
+    const b = map.getBounds().pad(0.25), d = g._d, S = b.getSouth(), N = b.getNorth(), W = b.getWest(), E = b.getEast();
+    const inView = c => c[1] >= S && c[1] <= N && c[0] >= W && c[0] <= E;
+    const shown = g._shown || (g._shown = new Map());
+    for (const [i, mk] of shown) if (!inView(d.f[i][0])) { g.removeLayer(mk); shown.delete(i); }
     for (let i = 0; i < d.f.length; i++) {
-      const c = d.f[i][0];
-      if (c[1] >= b.getSouth() && c[1] <= b.getNorth() && c[0] >= b.getWest() && c[0] <= b.getEast())
-        g.addLayer(pointMarker(g._meta, d, i));
+      if (!shown.has(i) && inView(d.f[i][0])) { const mk = pointMarker(g._meta, d, i); shown.set(i, mk); g.addLayer(mk); }
     }
   }
+  function clearPoints(g) { g.clearLayers(); g._shown = null; }
   function openFeature(meta, props, latlng) {
     L.popup({ maxWidth: Math.min(320, window.innerWidth - 50) }).setLatLng(latlng)
       .setContent(featurePopup(meta, { properties: props })).openOn(map);
@@ -372,7 +425,7 @@
   // Draw order: shapes, then points, then CWQT sites on top.
   function restack() {
     EXTRA.forEach((m, i) => { const l = extraState[i].layer;
-      if (m.kind === "point" && l && map.hasLayer(l)) l.eachLayer(x => x.bringToFront()); });
+      if (m.kind === "point" && l && map.hasLayer(l)) l.eachLayer(x => { if (x.bringToFront) x.bringToFront(); }); });
     if (cwqtLayer) cwqtLayer.eachLayer(x => x.bringToFront());
   }
   function syncExtra() {
@@ -381,7 +434,7 @@
       const st = extraState[i], show = st.checked && z >= (meta.minZoom || 0);
       if (st.layer) {
         if (show && !map.hasLayer(st.layer)) st.layer.addTo(map);
-        if (!show && map.hasLayer(st.layer)) { map.removeLayer(st.layer); if (st.layer._d) st.layer.clearLayers(); }
+        if (!show && map.hasLayer(st.layer)) { map.removeLayer(st.layer); if (st.layer._d) clearPoints(st.layer); }
         if (show && st.layer._d) refreshPoints(st.layer);
       }
       const hintEl = document.getElementById(`extra-hint-${i}`);
@@ -421,13 +474,13 @@
   const earlier = D.layers.map((l, i) => [l, i]).filter(([l]) => l.earlier);
   let html = `
     <details class="layer-group" open>
-      <summary>${chev}CWQT water quality <small>Enterococcus</small></summary>
+      <summary>${chev}CWQT Water Quality <small>Enterococcus</small></summary>
       <div class="group-body">
         ${check("cwqt-on", "Show sampling sites", true)}
         <div class="opts" id="cwqt-opts">
           <div class="sub-label">Show results for</div>
           ${main.map(([l, i]) => radio("cwqt", i, l.name, i === 0)).join("")}
-          ${earlier.length ? `<details class="subgroup"><summary>${chev}Earlier seasons</summary>
+          ${earlier.length ? `<details class="subgroup"><summary>${chev}Earlier Seasons</summary>
             <div class="opts">${earlier.map(([l, i]) => radio("cwqt", i, l.name, false)).join("")}</div></details>` : ""}
         </div>
       </div>
@@ -440,7 +493,7 @@
           check(`extra-${i}`, l.name, false) + `<div class="hint" id="extra-hint-${i}" hidden></div>`).join("")}
       </div>
     </details>`).join("")}
-    <details class="layer-group"${small() ? "" : " open"}>
+    <details class="layer-group">
       <summary>${chev}Basemap</summary>
       <div class="group-body">
         ${BASEMAPS.map((b, i) => radio("basemap", i, b.name, i === 0)).join("")}
@@ -496,7 +549,9 @@
   function updateLegend() {
     const box = document.getElementById("legend-extra");
     if (!box) return;
-    const sw = (meta, c) => meta.kind === "point"
+    const sw = (meta, c) => meta.style && meta.style.icon
+      ? `<span style="display:inline-block;width:14px;margin-right:4px;vertical-align:-3px">${iconSvg(meta, 14)}</span>`
+      : meta.kind === "point"
       ? `<span class="dot" style="width:9px;height:9px;background:${c}"></span>`
       : `<span class="dot" style="border-radius:2px;background:${c}55;border:1.5px solid ${c}"></span>`;
     let html = "", lastHead = null;

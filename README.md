@@ -18,7 +18,7 @@ Results entered in the master sheet automatically appear on the map the next mor
 | `cwqt_visualize.py` | Reads the workbook, calculates the statistics and writes every output. All thresholds and definitions are in its **CONFIGURATION** section near the top. |
 | `templates/` | The web pages' design: `map.html` (map page), `charts.html` (charts page), `cwqt.css` (shared colors, fonts, banner). Edit these to change how the portal looks; see [Changing the look](#changing-the-look-of-the-portal). |
 | `templates/assets/` | SWIM branding: `swim-logo.png` (banner and chart footers), `swim-emblem.png` (browser-tab icon) and `fonts/` (Poppins, used in the charts; free under the SIL Open Font License, see `OFL-LICENSE.txt`). |
-| `data/` | Extra map layers (outfalls, drainage areas, green infrastructure) and `layers.json`, which says how each one is shown. See [Map layers](#map-layers). |
+| `data/` | Extra map layers (partner labs, outfalls, drainage areas, green infrastructure) and `layers.json`, which says how each one is shown, plus `CWQT_Sites_GoogleMyMap.csv`, which supplies each site's "See raw data" link. See [Map layers](#map-layers). |
 | `requirements.txt` | Python packages the script needs. |
 | `.github/workflows/update-map.yml` | The daily job: download the sheet → run the script → publish the site. |
 | `status.json` | Written by the daily job: latest sample date, sample count and site count. A new commit means new data arrived. |
@@ -118,11 +118,14 @@ The design lives in `templates/` and is separate from the calculations. Edit tho
 | Colors, fonts, button style, banner height | the **SWIM BRAND** block at the top of `templates/cwqt.css` |
 | Banner title, button labels, popup wording, legend text | `templates/map.html` |
 | How popup titles are written ("Rutgers Boathouse, Raritan River" / "New Brunswick · New Jersey") | `popup_heading` in `cwqt_visualize.py`. The titles come from the Site name, Waterbody, Borough/State and Neighborhood/Town columns on the Information tab. |
+| The "See raw data" links in site popups | the `results_sheet_url` column of `data/CWQT_Sites_GoogleMyMap.csv`, matched to sites by `site_id`. To use a different file or column, change `SITE_LINKS_FILE` / `SITE_LINKS_COLUMN` in `cwqt_visualize.py`. Sites without a link simply don't show one. |
+| The small time-series chart in site popups | `sparkline` in `templates/map.html` |
 | Chart descriptions and page text on the charts page | `templates/charts.html` |
 | The logo | Replace `templates/assets/swim-logo.png`. The script trims empty transparent margins automatically, so any version of the logo works. It's used in the banner and in every chart's footer. |
 | The browser-tab icon (favicon) | Replace `templates/assets/swim-emblem.png`, ideally a square PNG with a transparent background, 512 px or larger. The script makes all the sizes browsers need (`favicon.ico`, `favicon-32.png`, `apple-touch-icon.png`), so there's nothing to convert. |
 | Chart fonts and colors | `templates/assets/fonts/` (Poppins), plus `INK`, `SERIES`, etc. in the CONFIGURATION section of `cwqt_visualize.py`. The footer text on each chart is `CHART_FOOTER`. |
 | Basemap choices or the streams overlay | the `BASEMAPS` and `WATERWAYS` lists near the top of the script in `templates/map.html`. `WATERWAYS.minZoom` sets how far in you must zoom before streams appear. |
+| Which waterbodies count as creeks, bays or major rivers in the "recovery after rain" chart | `WATERBODY_GROUPS` and `SITE_GROUP_OVERRIDES` in the CONFIGURATION section of `cwqt_visualize.py` |
 | Thresholds, categories, season dates | the CONFIGURATION section of `cwqt_visualize.py` (used by the charts *and* the map) |
 
 Words in double curly braces in the templates (e.g. `{{DATA}}`, `{{N_SITES}}`) are filled in by the
@@ -136,7 +139,15 @@ script. Keep them where you want those values to appear.
   lake and reservoir at the citywide view. "Streets" and "Satellite" basemaps are also available.
 - On phones the legend starts collapsed, button labels shorten, and tap targets are larger.
 - Charts use Poppins and SWIM navy, with a footer showing the source, the "Data through" date and the
-  SWIM logo.
+  SWIM logo. The charts page ends with the SWIM emblem.
+- Site popups: the title and place, the current category, the geometric mean and most recent result,
+  a small chart of every season's geomean (points colored good / advisory / poor), then
+  "See full time series" (the site's PDF) and "See raw data" (the site's results sheet).
+- Charts page order: (1) water quality over time, (2) recent water quality by waterbody,
+  (3) rainfall, (4) recovery after rain, (5) the latest 30 days by waterbody, (6) every site, every
+  season, (7) each site's full time series.
+- Each site's PDF has two pages: (1) its seasonal geomean by year, colored by category, for a quick
+  read; (2) every sample, with the rolling 30-day geomean.
 
 ---
 
@@ -145,7 +156,7 @@ script. Keep them where you want those values to appear.
 In Wix: Add Elements → Embed Code → **Embed HTML** → Enter Code, and paste:
 
 ```html
-<iframe src="https://swimcoalition.github.io/CWQT-Data-Portal/"
+<iframe src="https://swimcoalition.github.io/CWQT-Data/"
         title="CWQT Data Portal: interactive map of water quality results"
         style="width:100%; height:100%; border:0;" loading="lazy"></iframe>
 ```
@@ -171,15 +182,20 @@ Besides the CWQT sites, the map's Layers menu offers the datasets in `data/`:
 
 | Group | Layer | Shown from | Style |
 |---|---|---|---|
-| Sewers & stormwater | Outfalls | ~1-mile zoom (12) | colored by type: CSO, MS4, highway, direct drainage, other |
-| Sewers & stormwater | Combined sewer drainage areas | any zoom | violet outlines |
-| Green infrastructure | Green infrastructure sites | neighborhood zoom (14) | green dots |
-| Green infrastructure | Porous pavement | 14 | green shapes |
-| Green infrastructure | Medians, Regulated projects | 13 | green shapes |
+| Partner Laboratories | Active Labs (on when the map opens) | any zoom | SWIM blue flask (`status` is "Active") |
+| Partner Laboratories | Historic Labs | any zoom | gray flask (any other `status`) |
+| Sewers & Stormwater | Outfalls | ~1-mile zoom (12) | colored by type: CSO, MS4, highway, direct drainage, other |
+| Sewers & Stormwater | Combined sewer drainage areas | any zoom | violet outlines |
+| Green Infrastructure | Green infrastructure sites | ~1-mile zoom (12) | green dots |
+| Green Infrastructure | Porous pavement, Medians, Regulated projects | 12 | green shapes |
 
-Each layer is off until someone checks it, and is only downloaded then. Clicking a feature shows its
-details. Point layers only draw what's on screen, so even the 16,000 green infrastructure sites stay
-fast.
+The green infrastructure layers appear at the same zoom as the streams overlay. Each layer except Active Labs is off
+until someone checks it, and is only downloaded then. Hovering over a lab shows its name; clicking
+any feature shows its details (for labs, one row per contact, from `lab_contacts`, which is written
+as `Lab Manager: Name; Lab Tech: Name`). Point layers only draw what's on screen, so even the 16,000
+green infrastructure sites stay fast: with every green infrastructure layer on at zoom 12 the map
+uses about 21 MB of memory, versus about 4 MB with only the CWQT sites. If that feels slow on
+phones, raise their `minZoom` to 13 in `data/layers.json`.
 
 **How it works.** `data/layers.json` lists each layer: which file(s), which fields go in the popup,
 colors, and the zoom level it appears at. On each run the script reads those files and writes small
@@ -191,7 +207,8 @@ about 1 m and simplifying outlines. The ~24 MB of raw downloads become about 1.8
 automatically. If two files match, the newest name wins, so delete the old one.
 
 **Adding a dataset.** Put the file in `data/`, then copy an existing entry in `data/layers.json` and
-edit it. The notes at the top of that file explain each setting. Files must be GeoJSON in
+edit it. The notes at the top of that file explain each setting, including `where` (split one file
+into several layers, as the Active/Historic labs do) and `style.icon` (draw an icon instead of a dot). Files must be GeoJSON in
 latitude/longitude, like NYC Open Data's GeoJSON exports. Shapefiles and KML files need converting
 first, e.g. at <https://mapshaper.org>: drop in the file (for a shapefile, all of its parts: `.shp`,
 `.shx`, `.dbf` and `.prj`), then Export → GeoJSON. While there:
@@ -220,7 +237,7 @@ Options:
 | `--out FOLDER` | Where outputs go (default `cwqt_outputs/`). |
 | `--window-end YYYY-MM-DD` | End date of the 30-day window (default: latest sample). |
 | `--average-splits` | Average lab/field split results recorded in Notes. |
-| `--site-pngs` | Also save one PNG per site. |
+| `--site-pngs` | Also save each site's two charts as PNGs (`…_geomean.png` and `…_samples.png`). |
 | `--no-map` | Skip the web pages (map and charts page). |
 
 Outputs go to `cwqt_outputs/` (or the `--out` folder). Open `index.html` there in a browser to
@@ -233,6 +250,15 @@ Run the script locally and open `data_quality_report.txt` for the current list. 
 - 8 duplicate site+date rows.
 - 5 rows with no MPN result.
 - 4 site names in Data that differ from Information.
+
+Found in November 2026 in the `data/` files:
+- `CWQT_Sites_GoogleMyMap.csv` has no `results_sheet_url` for sites 6 and 157–160, so those sites have
+  no "See raw data" link yet. It also lists site IDs 3, 4 and 11, which aren't on the map, and 17 site
+  names that differ from the master sheet (harmless: links are matched by ID).
+- `CWQT_Partner_Labs.geojson` has 3 labs with no `lab_contacts` (their popups say "No lab contacts
+  listed").
+- Battery High Tide: five dates have times that don't fit the 12.4-hour tide cycle (four look like
+  low-tide times): 2023-08-31, 2026-07-16, 2026-07-23, 2026-07-30 and 2026-08-06.
 
 Fixed in October 2026: site 160's (Hackensack) positive longitude, and the 2026 rainfall, which is now
 entered, so 2026 has a wet/dry split. The script still checks for both, in case they recur.

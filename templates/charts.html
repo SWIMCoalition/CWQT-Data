@@ -38,6 +38,7 @@
   .sites ul { columns: 2; column-gap: 24px; margin: 0 0 10px; padding-left: 18px; }
   .sites li { break-inside: avoid; margin: 2px 0; }
   .footer { margin-top: 28px; font-size: 12px; color: var(--ink-2); }
+  .emblem { display: block; width: 96px; height: auto; margin: 28px auto 0; }
   @media (max-width: 640px) {
     .content { padding: 16px 12px 36px; }
     .intro h2 { font-size: 21px; }
@@ -86,30 +87,29 @@
     <p class="muted">Click any chart below to open it full size.</p>
     <ol class="toc">
       <li><a href="#trend">Water quality over time, all sites</a></li>
-      <li><a href="#heatmap">Every site, every season</a></li>
-      <li><a href="#rain">How rainfall affects bacteria levels</a></li>
       <li><a href="#waterbody">Recent water quality by waterbody</a></li>
-      <li><a href="#latest">The latest 30 days</a></li>
+      <li><a href="#rain">How rainfall affects bacteria levels</a></li>
+      <li><a href="#recovery">Recovery after rain</a></li>
+      <li><a href="#latest">Water quality over the latest 30 days</a></li>
+      <li><a href="#heatmap">Every site, every season</a></li>
       <li><a href="#sites">Full time series for each site</a></li>
     </ol>
   </section>
 
   <section class="card" id="trend">
     <h3>1. Water quality over time, all sites</h3>
-    <p>The top panel shows the typical (median) site's geometric mean each season. The shaded band covers
-      the middle half of sites, and a gray line follows only the long-running sites, so the trend isn't
-      skewed by sites added over the years. The bottom panel shows the share of samples above the
-      single-sample limit of {{LIMIT}}, split into dry and wet weather.</p>
+    <p>The top panel shows the typical (median) site's geometric mean each season; the shaded band covers
+      the middle half of sites. The bottom panel shows the share of samples above the single-sample limit
+      of {{LIMIT}}, split into dry and wet weather.</p>
     <figure><a href="1_program_trend.png" target="_blank" rel="noopener"><img src="1_program_trend.png" loading="lazy" alt="Line charts of the median site geometric mean and the share of samples over the limit, by season"></a></figure>
   </section>
 
-  <section class="card" id="heatmap">
-    <h3>2. Every site, every season</h3>
-    <p>One row per site, grouped by waterbody, and one column per season. Each cell is colored by that
-      season's geometric mean (good, advisory or poor), and gray means the site wasn't sampled. Use it to
-      spot sites that are improving, getting worse or consistently poor. Scroll inside the image to see
-      all sites.</p>
-    <figure class="tall"><a href="2_site_by_season_heatmap.png" target="_blank" rel="noopener"><img src="2_site_by_season_heatmap.png" loading="lazy" alt="Grid of sites by season colored by water quality category"></a></figure>
+  <section class="card" id="waterbody">
+    <h3>2. Recent water quality by waterbody ({{RECENT_RANGE}})</h3>
+    <p>Each row is a waterbody, ordered from cleanest to most contaminated over the last
+      {{RECENT_SEASONS}} seasons. The large dot is the geometric mean of all samples in that waterbody,
+      and small dots are its individual sites. The right-hand side shows the number of sites and samples from each waterbody.</p>
+    <figure><a href="2_waterbody_comparison.png" target="_blank" rel="noopener"><img src="2_waterbody_comparison.png" loading="lazy" alt="Dot chart of geometric mean by waterbody"></a></figure>
   </section>
 
   <section class="card" id="rain">
@@ -121,25 +121,39 @@
     <figure><a href="3_rainfall_effect.png" target="_blank" rel="noopener"><img src="3_rainfall_effect.png" loading="lazy" alt="Geometric mean and share of samples over the limit for five rainfall ranges"></a></figure>
   </section>
 
-  <section class="card" id="waterbody">
-    <h3>4. Recent water quality by waterbody ({{RECENT_RANGE}})</h3>
-    <p>Each row is a waterbody, ordered from cleanest to most contaminated over the last
-      {{RECENT_SEASONS}} seasons. The large dot is the geometric mean of all samples in that waterbody,
-      and small dots are its individual sites. The right-hand side shows the number of sites and samples from each waterbody.</p>
-    <figure><a href="4_waterbody_comparison.png" target="_blank" rel="noopener"><img src="4_waterbody_comparison.png" loading="lazy" alt="Dot chart of geometric mean by waterbody"></a></figure>
+  <section class="card" id="recovery">
+    <h3>4. Recovery after rain</h3>
+    <p>Samples are grouped by how many days had passed since the last day with at least 0.25" of rain at
+      Central Park. Bacteria peak the day after rain and fall over the following days. The big rivers and
+      the harbor are mostly back to normal after about two days, while creeks, canals and enclosed basins
+      take four to five. The numbers along the bottom show the share of samples above {{LIMIT}}. Rain on
+      the sampling day itself may have fallen after the sample was taken.</p>
+    <figure><a href="4_rain_recovery.png" target="_blank" rel="noopener"><img src="4_rain_recovery.png" loading="lazy" alt="Geometric mean by days since rain, for rivers and harbor, creeks and basins, and bays"></a></figure>
   </section>
 
   <section class="card" id="latest">
-    <h3>5. The latest 30 days ({{WINDOW}})</h3>
-    <p>Each site's geometric mean over the most recent 30 days of sampling, ranked from cleanest to most
-      contaminated. Hollow dots mark sites with fewer than {{MIN_N}} samples in the window.</p>
-    <figure class="tall"><a href="5_latest_30_day_status.png" target="_blank" rel="noopener"><img src="5_latest_30_day_status.png" loading="lazy" alt="Ranked dot chart of 30-day geometric mean by site"></a></figure>
+    <h3>5. Water quality over the latest 30 days ({{WINDOW}})</h3>
+    <p>Each row is a waterbody, ordered from cleanest to most contaminated over the most recent 30 days of
+      sampling. The large dot is the geometric mean of all samples in that waterbody, and small dots are its
+      individual sites. Hollow dots mark waterbodies with fewer than {{MIN_N}} samples in the window. The
+      right-hand side shows the share of samples above {{LIMIT}} and the number of sites and samples.</p>
+    <figure><a href="5_latest_30_days_by_waterbody.png" target="_blank" rel="noopener"><img src="5_latest_30_days_by_waterbody.png" loading="lazy" alt="Dot chart of 30-day geometric mean by waterbody"></a></figure>
+  </section>
+
+  <section class="card" id="heatmap">
+    <h3>6. Every site, every season</h3>
+    <p>One row per site, grouped by waterbody, and one column per season. Each cell is colored by that
+      season's geometric mean (good, advisory or poor), and gray means the site wasn't sampled. Use it to
+      spot sites that are improving, getting worse or consistently poor. Scroll inside the image to see
+      all sites.</p>
+    <figure class="tall"><a href="6_site_by_season_heatmap.png" target="_blank" rel="noopener"><img src="6_site_by_season_heatmap.png" loading="lazy" alt="Grid of sites by season colored by water quality category"></a></figure>
   </section>
 
   <section class="card sites" id="sites">
-    <h3>6. Full time series for each site</h3>
-    <p>Every regular-season sample at a site, season by season, with dry- and wet-weather samples
-      marked and each season's geometric mean. Choose a site below, or download
+    <h3>7. Full time series for each site</h3>
+    <p>Each site's PDF has two pages. Page 1 shows the site's geometric mean season by season, colored
+      good, advisory or poor. Page 2 shows every regular-season sample, with dry- and wet-weather samples
+      marked. Choose a site below, or download
       <a href="site_timeseries.pdf" target="_blank" rel="noopener">all sites in one PDF</a>.</p>
     {{SITE_LIST}}
   </section>
@@ -148,6 +162,7 @@
     Updated {{BUILT}}.</p>
   <p class="footer">Feedback is welcome! Please contact us with any questions or suggestions at 
     <a href="mailto:contact@swimmablenyc.org?subject=CWQT%20Data%20Portal">contact@swimmablenyc.org</a>.</p>
+  <img class="emblem" src="assets/swim-emblem-192.png" alt="SWIM Coalition emblem" width="96" height="96" loading="lazy" onerror="this.remove()">
 </main>
 </body>
 </html>
