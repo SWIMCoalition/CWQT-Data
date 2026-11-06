@@ -1,0 +1,366 @@
+{
+ "type": "FeatureCollection",
+ "name": "CWQT_partner_labs",
+ "features": [
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -73.9663259,
+     40.7160513
+    ]
+   },
+   "properties": {
+    "feature_id": "LAB-01",
+    "name": "Billion Oyster Project Williamsburg Field Station",
+    "status": "Not active in 2025",
+    "lab_contacts": "Lab Manager: Anna Weiss",
+    "mymap_layer": "Partner Laboratories",
+    "mymap_icon": "grey",
+    "latitude": 40.7160513,
+    "longitude": -73.9663259
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -73.8706809,
+     40.8472615
+    ]
+   },
+   "properties": {
+    "feature_id": "LAB-02",
+    "name": "Bronx River Alliance",
+    "status": "Active",
+    "lab_contacts": "Lab Coordinator: Christian Murphy",
+    "mymap_layer": "Partner Laboratories",
+    "mymap_icon": "green",
+    "latitude": 40.8472615,
+    "longitude": -73.8706809
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -73.9515334,
+     40.6306596
+    ]
+   },
+   "properties": {
+    "feature_id": "LAB-03",
+    "name": "Brooklyn College Lab",
+    "status": "Not active in 2025",
+    "lab_contacts": "Lab Manager: Jennifer Cherrier; Lab Tech: Reese LeVea",
+    "mymap_layer": "Partner Laboratories",
+    "mymap_icon": "grey",
+    "latitude": 40.6306596,
+    "longitude": -73.9515334
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -73.9600039,
+     40.8095217
+    ]
+   },
+   "properties": {
+    "feature_id": "LAB-04",
+    "name": "Columbia University/Lamont-Doherty",
+    "status": "Not active in 2025",
+    "lab_contacts": "Lab Coordinator: Wade McGillis",
+    "mymap_layer": "Partner Laboratories",
+    "mymap_icon": "grey",
+    "latitude": 40.8095217,
+    "longitude": -73.9600039
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -74.0119314,
+     40.7288848
+    ]
+   },
+   "properties": {
+    "feature_id": "LAB-05",
+    "name": "Hudson River Park's River Project",
+    "status": "Active",
+    "lab_contacts": "Lab Coordinator: Siddhartha Hayes",
+    "mymap_layer": "Partner Laboratories",
+    "mymap_icon": "green",
+    "latitude": 40.7288848,
+    "longitude": -74.0119314
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -74.0239119,
+     40.6455309
+    ]
+   },
+   "properties": {
+    "feature_id": "LAB-06",
+    "name": "Interstate Environmental Commission",
+    "status": "Active",
+    "lab_contacts": "Lab Manager: Evelyn Powers; Lab Tech: Jessica Bonamusa",
+    "mymap_layer": "Partner Laboratories",
+    "mymap_icon": "green",
+    "latitude": 40.6455309,
+    "longitude": -74.0239119
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -73.9907956,
+     40.7713606
+    ]
+   },
+   "properties": {
+    "feature_id": "LAB-07",
+    "name": "John Jay College",
+    "status": "Active",
+    "lab_contacts": "Lab Coordinator: Holly Porter-Morgan, Sandra Swenson",
+    "mymap_layer": "Partner Laboratories",
+    "mymap_icon": "green",
+    "latitude": 40.7713606,
+    "longitude": -73.9907956
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -73.9379239,
+     40.7444121
+    ]
+   },
+   "properties": {
+    "feature_id": "LAB-08",
+    "name": "LaGuardia Community College Environmental Science Program",
+    "status": "Not active in 2025",
+    "lab_contacts": "Lab Coordinator: Holly Porter-Morgan",
+    "mymap_layer": "Partner Laboratories",
+    "mymap_icon": "grey",
+    "latitude": 40.7444121,
+    "longitude": -73.9379239
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -73.9031572,
+     40.8934936
+    ]
+   },
+   "properties": {
+    "feature_id": "LAB-09",
+    "name": "Manhattan College",
+    "status": "Not active in 2025",
+    "lab_contacts": "",
+    "mymap_layer": "Partner Laboratories",
+    "mymap_icon": "grey",
+    "latitude": 40.8934936,
+    "longitude": -73.9031572
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -74.1256289,
+     40.5673743
+    ]
+   },
+   "properties": {
+    "feature_id": "LAB-10",
+    "name": "Monsignor Farrell High School",
+    "status": "Active",
+    "lab_contacts": "Lab Manager: Jennifer Frydberg",
+    "mymap_layer": "Partner Laboratories",
+    "mymap_icon": "green",
+    "latitude": 40.5673743,
+    "longitude": -74.1256289
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -73.82047,
+     40.7386772
+    ]
+   },
+   "properties": {
+    "feature_id": "LAB-11",
+    "name": "Queens College",
+    "status": "Active",
+    "lab_contacts": "Lab Manager: Greg O'Mullan; Lab Tech: Emma Garrison",
+    "mymap_layer": "Partner Laboratories",
+    "mymap_icon": "green",
+    "latitude": 40.7386772,
+    "longitude": -73.82047
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -73.9605725,
+     40.7387742
+    ]
+   },
+   "properties": {
+    "feature_id": "LAB-12",
+    "name": "Queens Landing Boathouse and Environmental Center",
+    "status": "Active",
+    "lab_contacts": "Lab Coordinator: Cody Herrmann; Lab Tech: Peter Milne Greiner",
+    "mymap_layer": "Partner Laboratories",
+    "mymap_icon": "green",
+    "latitude": 40.7387742,
+    "longitude": -73.9605725
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -73.9209355,
+     40.7959077
+    ]
+   },
+   "properties": {
+    "feature_id": "LAB-13",
+    "name": "Randall's Island Park Alliance",
+    "status": "Active",
+    "lab_contacts": "Lab Coordinator: Jacqueline Wu",
+    "mymap_layer": "Partner Laboratories",
+    "mymap_icon": "green",
+    "latitude": 40.7959077,
+    "longitude": -73.9209355
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -73.9017302,
+     40.9392011
+    ]
+   },
+   "properties": {
+    "feature_id": "LAB-14",
+    "name": "Sarah Lawrence Center for the Urban River",
+    "status": "Active",
+    "lab_contacts": "Lab Coordinator: Ryan Palmer",
+    "mymap_layer": "Partner Laboratories",
+    "mymap_icon": "green",
+    "latitude": 40.9392011,
+    "longitude": -73.9017302
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -73.9920509,
+     40.6933294
+    ]
+   },
+   "properties": {
+    "feature_id": "LAB-15",
+    "name": "St Francis College",
+    "status": "Not active in 2025",
+    "lab_contacts": "Lab Coordinator: Victoria Ruiz",
+    "mymap_layer": "Partner Laboratories",
+    "mymap_icon": "grey",
+    "latitude": 40.6933294,
+    "longitude": -73.9920509
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -73.7928794,
+     40.8052486
+    ]
+   },
+   "properties": {
+    "feature_id": "LAB-16",
+    "name": "SUNY Maritime",
+    "status": "Not active in 2025",
+    "lab_contacts": "Lab Coordinator: Caterina Panzeca",
+    "mymap_layer": "Partner Laboratories",
+    "mymap_icon": "grey",
+    "latitude": 40.8052486,
+    "longitude": -73.7928794
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -74.0129776,
+     40.6915907
+    ]
+   },
+   "properties": {
+    "feature_id": "LAB-17",
+    "name": "Urban Assembly NY Harbor School Marine Biology Research Program",
+    "status": "Not active in 2025",
+    "lab_contacts": "",
+    "mymap_layer": "Partner Laboratories",
+    "mymap_icon": "grey",
+    "latitude": 40.6915907,
+    "longitude": -74.0129776
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -73.883249271151,
+     40.8179413001254
+    ]
+   },
+   "properties": {
+    "feature_id": "LAB-18",
+    "name": "Rocking The Boat",
+    "status": "Active",
+    "lab_contacts": "",
+    "mymap_layer": "Partner Laboratories",
+    "mymap_icon": "green",
+    "latitude": 40.8179413001254,
+    "longitude": -73.883249271151
+   }
+  }
+ ]
+}
