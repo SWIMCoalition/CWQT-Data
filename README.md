@@ -31,7 +31,7 @@ every site matches.
 
 - **Censored results:** `<10` counts as 10, `>24196` as 24196 and `>6000` as 6000.
 - **Geometric mean** = exp(mean(ln(MPN))).
-- **Categories** (NYC DOH primary contact, same as the sheet's green/yellow/red):
+- **Categories** (NYC DOH primary contact scale):
   - Good: geomean ≤ 35
   - Advisory: 35–104
   - Poor: > 104
@@ -48,10 +48,6 @@ every site matches.
   as 0.45.
 - **Lab/field splits** recorded in Notes are ignored as of now, so the numbers match the GeoMean
   tabs. Run with `--average-splits` to average them as the FAQ describes.
-
-To change any of these, edit the CONFIGURATION section of `cwqt_visualize.py`
-(`GOOD_MAX`, `ADVISORY_MAX`, `SEASON_START`, `WET_WEATHER_INCHES`, `RAIN_DAYS`, `DEC_CRITERIA`, …).
-The next daily run uses the new values.
 
 ### What the script expects in the sheet
 Columns are found **by their header names**, so moving or inserting columns is fine.
@@ -76,8 +72,7 @@ New sites only need a row on the Information tab (with coordinates) and a matchi
 `.github/workflows/update-map.yml` runs every day at 11:17 UTC (7:17 am EDT / 6:17 am EST) on
 Ubuntu 24.04:
 
-1. Downloads the sheet as .xlsx, using the `CWQT_SHEET_ID` secret (plus
-   `GOOGLE_SERVICE_ACCOUNT_JSON` if the sheet is private).
+1. Downloads the sheet as .xlsx, using `CWQT_SHEET_ID`.
 2. Runs `python cwqt_visualize.py --out build`.
 3. Copies the public files to `site/` and deploys them to GitHub Pages.
 4. Commits `status.json` if the data changed. If 45 days pass with no commit (e.g. off-season), it
@@ -148,31 +143,6 @@ script. Keep them where you want those values to appear.
   season, (7) each site's full time series.
 - Each site's PDF has two pages: (1) its seasonal geomean by year, colored by category, for a quick
   read; (2) every sample, with the rolling 30-day geomean.
-
----
-
-## Embedding the portal on the Wix site
-
-In Wix: Add Elements → Embed Code → **Embed HTML** → Enter Code, and paste:
-
-```html
-<iframe src="https://swimcoalition.github.io/CWQT-Data/"
-        title="CWQT Data Portal: interactive map of water quality results"
-        style="width:100%; height:100%; border:0;" loading="lazy"></iframe>
-```
-
-Then drag the embed box to the size you want; the map fills it. Wix keeps a separate mobile layout,
-so switch the editor to mobile view and set the box there too (full width, about 600 px tall).
-Suggested desktop size: full content width, about 750 px tall.
-
-When the map is embedded, it behaves differently from when it's opened directly:
-- **Scrolling.** Scrolling or swiping over it moves the page, not the map. To move the map, people
-  use two fingers on a phone, or Ctrl/⌘ + scroll on a computer; a short message tells them so.
-- **Full screen.** An "Open full screen ↗" link opens the portal in its own tab.
-- **Charts & Graphics.** The button opens the charts page in a new tab, so it isn't squeezed into the
-  embed box. Opened directly, the portal opens it in the same tab.
-- **Starting view.** The map re-fits to show all sites whenever Wix resizes the box, until the visitor
-  moves it.
 
 ---
 
