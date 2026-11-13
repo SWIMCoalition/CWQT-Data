@@ -63,6 +63,10 @@
       <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 3 5 8l5 5"/></svg>
       <span class="long">Back to the map</span><span class="short">Map</span>
     </a>
+    <a class="btn" href="mailto:contact@swimmablenyc.org?subject=CWQT%20Data%20Portal" title="Email contact@swimmablenyc.org">
+      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 3.5h11v7h-6l-3 2.5v-2.5h-2z"/></svg>
+      <span class="long">Provide Feedback</span><span class="short">Feedback</span>
+    </a>
   </nav>
 </header>
 
@@ -90,6 +94,7 @@
       <li><a href="#waterbody">Recent water quality by waterbody</a></li>
       <li><a href="#rain">How rainfall affects bacteria levels</a></li>
       <li><a href="#recovery">Recovery after rain</a></li>
+      <li><a href="#gi">Green infrastructure installations</a></li>
       <li><a href="#latest">Water quality over the latest 30 days</a></li>
       <li><a href="#heatmap">Every site, every season</a></li>
       <li><a href="#sites">Full time series for each site</a></li>
@@ -131,26 +136,43 @@
     <figure><a href="4_rain_recovery.png" target="_blank" rel="noopener"><img src="4_rain_recovery.png" loading="lazy" alt="Geometric mean by days since rain, for rivers and harbor, creeks and basins, and bays"></a></figure>
   </section>
 
+  <section class="card" id="gi">
+    <h3>5. Green infrastructure installations</h3>
+    <p>Green infrastructure (GI) captures stormwater where it falls, in bioswales, rain gardens, green roofs,
+      porous pavement and underground storage, so less runoff reaches the sewers. Where sewers are combined,
+      that means fewer overflows of sewage-contaminated water into the waterways CWQT samples. Vegetated GI
+      also brings co-benefits such as shade, cooler streets, cleaner air and habitat for birds and
+      pollinators.</p>
+    <p>The left chart shows the running total of GI installations finished in NYC, by the year they were
+      built, split into vegetated GI (bioswales, rain gardens, green roofs…) and green-grey GI (porous
+      pavement, concrete-top infiltration basins, underground storage…). The hatched bar counts the
+      {{GI_PIPELINE}} pipeline projects still in design or under construction. The pie shows the most common
+      types among the {{GI_BUILT}} finished installations. The data are NYC DEP's green infrastructure
+      datasets from NYC Open Data, downloaded {{GI_DOWNLOADED}} (the 2026 total is as of that date), and
+      are the same as the map's Green Infrastructure layers.</p>
+    <figure><a href="5_green_infrastructure.png" target="_blank" rel="noopener"><img src="5_green_infrastructure.png" loading="lazy" alt="Stacked bars of green infrastructure built in NYC by year, vegetated and green-grey, with a hatched pipeline bar, and a pie chart of the most common types"></a></figure>
+  </section>
+
   <section class="card" id="latest">
-    <h3>5. Water quality over the latest 30 days ({{WINDOW}})</h3>
+    <h3>6. Water quality over the latest 30 days ({{WINDOW}})</h3>
     <p>Each row is a waterbody, ordered from cleanest to most contaminated over the most recent 30 days of
       sampling. The large dot is the geometric mean of all samples in that waterbody, and small dots are its
       individual sites. Hollow dots mark waterbodies with fewer than {{MIN_N}} samples in the window. The
       right-hand side shows the share of samples above {{LIMIT}} and the number of sites and samples.</p>
-    <figure><a href="5_latest_30_days_by_waterbody.png" target="_blank" rel="noopener"><img src="5_latest_30_days_by_waterbody.png" loading="lazy" alt="Dot chart of 30-day geometric mean by waterbody"></a></figure>
+    <figure><a href="6_latest_30_days_by_waterbody.png" target="_blank" rel="noopener"><img src="6_latest_30_days_by_waterbody.png" loading="lazy" alt="Dot chart of 30-day geometric mean by waterbody"></a></figure>
   </section>
 
   <section class="card" id="heatmap">
-    <h3>6. Every site, every season</h3>
+    <h3>7. Every site, every season</h3>
     <p>One row per site, grouped by waterbody, and one column per season. Each cell is colored by that
       season's geometric mean (good, advisory or poor), and gray means the site wasn't sampled. Use it to
       spot sites that are improving, getting worse or consistently poor. Scroll inside the image to see
       all sites.</p>
-    <figure class="tall"><a href="6_site_by_season_heatmap.png" target="_blank" rel="noopener"><img src="6_site_by_season_heatmap.png" loading="lazy" alt="Grid of sites by season colored by water quality category"></a></figure>
+    <figure class="tall"><a href="7_site_by_season_heatmap.png" target="_blank" rel="noopener"><img src="7_site_by_season_heatmap.png" loading="lazy" alt="Grid of sites by season colored by water quality category"></a></figure>
   </section>
 
   <section class="card sites" id="sites">
-    <h3>7. Full time series for each site</h3>
+    <h3>8. Full time series for each site</h3>
     <p>Each site's PDF has two pages. Page 1 shows the site's geometric mean season by season, colored
       good, advisory or poor. Page 2 shows every regular-season sample, with dry- and wet-weather samples
       marked. Choose a site below, or download
@@ -160,6 +182,8 @@
 
   <p class="footer">Updated automatically every morning from the CWQT master data sheet · {{DATA_THROUGH}} ·
     Updated {{BUILT}}.</p>
+  <p class="footer">This site was made using open-source data. The code is available in the
+    <a href="https://github.com/SWIMCoalition/CWQT-Data" target="_blank" rel="noopener">CWQT-Data repository on GitHub</a>.</p>
   <p class="footer">Feedback is welcome! Please contact us with any questions or suggestions at 
     <a href="mailto:contact@swimmablenyc.org?subject=CWQT%20Data%20Portal">contact@swimmablenyc.org</a>.</p>
   <img class="emblem" src="assets/swim-emblem-192.png" alt="SWIM Coalition emblem" width="96" height="96" loading="lazy" onerror="this.remove()">

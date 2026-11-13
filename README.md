@@ -36,8 +36,8 @@ every site matches.
   - Advisory: 35–104
   - Poor: > 104
 - **Single-sample limit** for "% of samples over": 104.
-- **Fewer than 5 samples:** a geomean from fewer than 5 samples is shown with a dashed / hollow
-  marker, because standards require at least 5.
+- **Fewer than 5 samples:** a geomean from fewer than 5 samples is shown with a hollow, dashed
+  droplet, because standards require at least 5.
 - **NYS DEC criteria** shown in map popups:
   - Class I: geomean 72, threshold 266
   - Classes SB and SA: geomean 35, threshold 130
@@ -121,6 +121,8 @@ The design lives in `templates/` and is separate from the calculations. Edit tho
 | Chart fonts and colors | `templates/assets/fonts/` (Poppins), plus `INK`, `SERIES`, etc. in the CONFIGURATION section of `cwqt_visualize.py`. The footer text on each chart is `CHART_FOOTER`. |
 | Basemap choices or the streams overlay | the `BASEMAPS` and `WATERWAYS` lists near the top of the script in `templates/map.html`. `WATERWAYS.minZoom` sets how far in you must zoom before streams appear. |
 | Which waterbodies count as creeks, bays or major rivers in the "recovery after rain" chart | `WATERBODY_GROUPS` and `SITE_GROUP_OVERRIDES` in the CONFIGURATION section of `cwqt_visualize.py` |
+| Which green infrastructure types count as vegetated or green-grey, and their colors | the `lists` and each layer's `style` in `data/layers.json`. See [Green infrastructure](#green-infrastructure). |
+| The feedback email address on the charts page | the two `mailto:` links in `templates/charts.html` (the "Provide Feedback" button and the last footer line) |
 | Thresholds, categories, season dates | the CONFIGURATION section of `cwqt_visualize.py` (used by the charts *and* the map) |
 
 Words in double curly braces in the templates (e.g. `{{DATA}}`, `{{N_SITES}}`) are filled in by the
@@ -133,14 +135,30 @@ script. Keep them where you want those values to appear.
   Bronx River stand out. The overlay appears from the ~1-mile zoom level, because USGS labels every
   lake and reservoir at the citywide view. "Streets" and "Satellite" basemaps are also available.
 - On phones the legend starts collapsed, button labels shorten, and tap targets are larger.
+- CWQT sites are water droplets with a white outline, colored by category. The legend's Enterococcus
+  section appears only while "Show sampling sites" is checked, and its title names the layer being
+  shown: "Enterococcus Bacteria Levels (2026)", "(Latest 30 Days)" or "(All Seasons)". The category
+  labels ("Good: ≤ 35", "Advisory: 35–104", "Poor: > 104") are `CATEGORY_LABELS` in
+  `cwqt_visualize.py`, so they read the same on the map and in the chart legends.
+- Green infrastructure is drawn as small squares (points) and shapes (polygons) in the same color, so
+  one legend swatch covers both: solid green with a darker green border for vegetated, solid grayish
+  green for green-grey. Pipeline projects (not finished yet) are their own layer: hollow squares and
+  hatched shapes with a dashed outline, in the same two colors. Each legend row appears only while its
+  layer is checked. The colors were checked for color-blind separation.
 - Charts use Poppins and SWIM navy, with a footer showing the source, the "Data through" date and the
   SWIM logo. The charts page ends with the SWIM emblem.
 - Site popups: the title and place, the current category, the geometric mean and most recent result,
   a small chart of every season's geomean (points colored good / advisory / poor), then
   "See full time series" (the site's PDF) and "See raw data" (the site's results sheet).
+- The charts page has "Back to the map" and "Provide Feedback" (emails contact@swimmablenyc.org)
+  buttons at the top, and its footer links to this repository.
 - Charts page order: (1) water quality over time, (2) recent water quality by waterbody,
-  (3) rainfall, (4) recovery after rain, (5) the latest 30 days by waterbody, (6) every site, every
-  season, (7) each site's full time series.
+  (3) rainfall, (4) recovery after rain, (5) green infrastructure installations, (6) the latest 30
+  days by waterbody, (7) every site, every season, (8) each site's full time series.
+- The green infrastructure chart uses the same files, categories and finished/pipeline rule as the
+  map (the `gi_vegetated` entry and the lists in `data/layers.json`); its colors and settings are the
+  `GI_…` values in the CONFIGURATION section of `cwqt_visualize.py`. Its footer names the DEP download
+  date (read from the file names) instead of the CWQT "Data through" date.
 - Each site's PDF has two pages: (1) its seasonal geomean by year, colored by category, for a quick
   read; (2) every sample, with the rolling 30-day geomean.
 
@@ -156,16 +174,44 @@ Besides the CWQT sites, the map's Layers menu offers the datasets in `data/`:
 | Partner Laboratories | Historic Labs | any zoom | gray flask (any other `status`) |
 | Sewers & Stormwater | Outfalls | ~1-mile zoom (12) | colored by type: CSO, MS4, highway, direct drainage, other |
 | Sewers & Stormwater | Combined sewer drainage areas | any zoom | violet outlines |
-| Green Infrastructure | Green infrastructure sites | ~1-mile zoom (12) | green dots |
-| Green Infrastructure | Porous pavement, Medians, Regulated projects | 12 | green shapes |
+| Green Infrastructure | Vegetated Green Infrastructure (finished) | ~1-mile zoom (12) | solid green squares and shapes, darker green border |
+| Green Infrastructure | Green-Grey Infrastructure (finished) | ~1-mile zoom (12) | solid grayish-green squares and shapes |
+| Green Infrastructure | Pipeline Projects (in design or construction, both kinds) | ~1-mile zoom (12) | hollow squares and hatched shapes, dashed outline |
 
 The green infrastructure layers appear at the same zoom as the streams overlay. Each layer except Active Labs is off
 until someone checks it, and is only downloaded then. Hovering over a lab shows its name; clicking
 any feature shows its details (for labs, one row per contact, from `lab_contacts`, which is written
-as `Lab Manager: Name; Lab Tech: Name`). Point layers only draw what's on screen, so even the 16,000
-green infrastructure sites stay fast: with every green infrastructure layer on at zoom 12 the map
-uses about 21 MB of memory, versus about 4 MB with only the CWQT sites. If that feels slow on
-phones, raise their `minZoom` to 13 in `data/layers.json`.
+as `Lab Manager: Name; Lab Tech: Name`). Each point layer is drawn as one picture rather than one
+marker per point, and only what's on screen is drawn, so even the 17,000 green infrastructure
+features stay fast: with all three green infrastructure layers on at zoom 12 the map uses about 13 MB of
+memory, versus about 2 MB with only the CWQT sites and labs. If that feels slow on phones, raise
+their `minZoom` to 13 in `data/layers.json`.
+
+### Green infrastructure
+All three green infrastructure layers read all four DEP files in `data/NYC_Green_Infrastructure_…/`
+(Point Layer, Porous Pavement, Medians and Regulated Projects) and split them by `asset_type`:
+
+- **Vegetated vs. green-grey.** The two lists at the bottom of `data/layers.json`,
+  `vegetated_types` and `green_grey_types`, decide which layer each `asset_type` belongs to. To move a
+  type, cut it from one list and paste it into the other. A type in neither list (including a blank
+  one) is drawn as vegetated, and the daily run prints a note naming it so it can be added to a list.
+  "Multiple GI Components", "Multiple Assets" and similar mixed projects count as vegetated.
+- **Finished vs. pipeline.** A feature is finished when its `status` starts with "Constructed"
+  ("Constructed", "Constructed (Full Maintenance)", "Constructed (In Guarantee)"). Everything else
+  (90% / 100% design, Final Design, In Construction) goes to Pipeline Projects. DEP's `status_gro`
+  (status group) is normally just a summary of `status`; where the two disagree (only in Regulated
+  Projects so far), the construction date breaks the tie: the feature counts as finished only if it
+  has a valid construction date. The popup then shows both, e.g. "Constructed (status group: In
+  Construction)". Set by `complete` (with `group_field`) and `only` in each layer's entry.
+- **Popups.** The subtitle is the layer name, plus the source for features that aren't from the
+  Point Layer, e.g. "Vegetated Green Infrastructure · Regulated Project" (set by `file_labels`).
+  Pipeline popups start with "Pipeline Project", e.g. "Pipeline Project · Green-Grey Infrastructure ·
+  Porous Pavement", and show no construction date.
+  ROW abbreviations are spelled out ("ROWB" → "Right-of-way bioswale") by `values`.
+- **Constructed month and year.** Shown only for complete features, from whichever date field the
+  file has (`constructed_date`, `constructe` or `constracte`). Dates before 2000 or in the future are
+  left out, such as the 1899-12-30 placeholder some Regulated Projects use for "no date". Set by
+  `built_date`.
 
 **How it works.** `data/layers.json` lists each layer: which file(s), which fields go in the popup,
 colors, and the zoom level it appears at. On each run the script reads those files and writes small
@@ -178,7 +224,8 @@ automatically. If two files match, the newest name wins, so delete the old one.
 
 **Adding a dataset.** Put the file in `data/`, then copy an existing entry in `data/layers.json` and
 edit it. The notes at the top of that file explain each setting, including `where` (split one file
-into several layers, as the Active/Historic labs do) and `style.icon` (draw an icon instead of a dot). Files must be GeoJSON in
+into several layers, as the Active/Historic labs do), `style.icon` (draw an icon instead of a dot),
+`style.shape` (`"square"`) and `complete` / `built_date` (see above). Files must be GeoJSON in
 latitude/longitude, like NYC Open Data's GeoJSON exports. Shapefiles and KML files need converting
 first, e.g. at <https://mapshaper.org>: drop in the file (for a shapefile, all of its parts: `.shp`,
 `.shx`, `.dbf` and `.prj`), then Export → GeoJSON. While there:
@@ -229,6 +276,22 @@ Found in November 2026 in the `data/` files:
   listed").
 - Battery High Tide: five dates have times that don't fit the 12.4-hour tide cycle (four look like
   low-tide times): 2023-08-31, 2026-07-16, 2026-07-23, 2026-07-30 and 2026-08-06.
+- DEP green infrastructure (November 3, 2026 download). These come from DEP, so they can't be fixed
+  here, but the map works around them:
+  - Regulated Projects: 28 disagree between `status` and `status_gro` (the other files never do):
+    25 are "Constructed" vs. "In Construction" and 3 are "Final Design" vs. "In Construction". 22 of
+    the 25 have no construction date, so they're drawn as pipeline projects; the other 3 (Eton Street
+    sewers, built April 2026) count as finished. Outside evidence is mixed: 1825 Cornaga Avenue's
+    building permits were only issued in March 2026 (pipeline is right), while NYCEDC reported the
+    Willets Point Phase 1 streets opened in April 2026 (finished is likely right; it has no date).
+    Of the 93 projects both fields call constructed, 4 have the date 1899-12-30 (a "no date"
+    placeholder) and 1 has none, so 5 show no "Constructed" line. 131 of the 223 share `asset_id` 0.
+  - Point Layer: 30 unfinished assets already have a construction date (one in 2029). DEP's data
+    dictionary calls this an "estimated completion date", so these are probably target dates; they
+    aren't shown.
+    11 assets of the Design of Corona Cloudburst Hub have a blank `asset_type` and are drawn as
+    vegetated.
+  - Medians: 1 unfinished median has a construction date; it isn't shown.
 
 Fixed in October 2026: site 160's (Hackensack) positive longitude, and the 2026 rainfall, which is now
 entered, so 2026 has a wet/dry split. The script still checks for both, in case they recur.

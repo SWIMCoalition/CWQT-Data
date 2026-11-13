@@ -7,7 +7,7 @@
     "fields: properties to keep, in popup order, as {property: label}. Everything else is dropped",
     "  so the map loads fast. values: optional lookups that turn codes into readable text.",
     "title: property shown in bold at the top of the popup.",
-    "style: color (hex), radius (points, in pixels), fill (0-1, polygons), weight (outline width).",
+    "style: color (hex), radius (points, in pixels), fill (0-1, polygons), weight (outline width), border (outline color), shape (\"square\" draws points as small squares).",
     "categories: optional; color features by one property. Values not listed use 'other'.",
     "minZoom: hide the layer when zoomed out further than this (11 = citywide, 14 = neighborhood).",
     "on: true to show the layer when the map opens.",
@@ -15,7 +15,19 @@
     "style.icon: draw an icon instead of a dot (\"flask\"); style.size is its height in pixels.",
     "subtitle: property shown under the popup title. contacts: a property written like",
     "  'Lab Manager: Anna Weiss; Lab Tech: Reese LeVea', shown as one row per person.",
-    "hover: true shows the popup title when the mouse is over a feature."
+    "hover: true shows the popup title when the mouse is over a feature.",
+    "where can also use \"in_list\" / \"not_in_list\" with the name of a list under \"lists\" at the bottom",
+    "  of this file (the green infrastructure layers use this to sort asset types).",
+    "file_labels: {file pattern: label}; the label is added to the popup subtitle, e.g.",
+    "  'Vegetated Green Infrastructure · Regulated Project'.",
+    "complete: features whose field starts with this text count as finished. group_field: a second",
+    "  status field (DEP's status group); when the two disagree, a feature counts as finished only if",
+    "  it has a valid construction date. only: \"complete\" keeps just finished features, \"pipeline\"",
+    "  just unfinished ones (style.pipeline draws them hollow / hatched). built_date: date fields to",
+    "  show (as month and year) for finished features; dates before min_year or in the future are",
+    "  treated as errors and left out. Add \"_built\" to fields to show it, and \"_status\" for the",
+    "  status (with the status group added when they disagree).",
+    "categories classes can use \"list\" (a list under \"lists\") instead of \"values\"."
   ],
   "layers": [
     {
@@ -166,15 +178,29 @@
       "on": false
     },
     {
-      "id": "gi_points",
+      "id": "gi_vegetated",
       "group": "Green Infrastructure",
-      "name": "Green infrastructure sites",
+      "name": "Vegetated Green Infrastructure",
       "files": [
-        "NYC_Green_Infrastructure_*/DEP_Green_Infrastructure_(Point_Layer)_*.json"
+        "NYC_Green_Infrastructure_*/DEP_Green_Infrastructure_(Point_Layer)_*.json",
+        "NYC_Green_Infrastructure_*/DEP_Green_Infrastructure_(Porous_Pavement_Right_of_Way_Practices)_*.json",
+        "NYC_Green_Infrastructure_*/DEP_Green_Infrastructure_(Medians)_*.json",
+        "NYC_Green_Infrastructure_*/DEP_Green_Infrastructure_(Regulated_Projects)_*.json"
       ],
+      "file_labels": {
+        "NYC_Green_Infrastructure_*/DEP_Green_Infrastructure_(Porous_Pavement_Right_of_Way_Practices)_*.json": "Porous Pavement",
+        "NYC_Green_Infrastructure_*/DEP_Green_Infrastructure_(Medians)_*.json": "Median",
+        "NYC_Green_Infrastructure_*/DEP_Green_Infrastructure_(Regulated_Projects)_*.json": "Regulated Project"
+      },
+      "where": {
+        "field": "asset_type",
+        "not_in_list": "green_grey_types",
+        "note_unless_in": "vegetated_types"
+      },
       "title": "asset_type",
       "fields": {
-        "status_gro": "Status",
+        "_status": "Status",
+        "_built": "Constructed",
         "project_na": "Project",
         "nyc_waters": "Waterbody",
         "outfall": "Outfall"
@@ -184,81 +210,222 @@
           "ROWB": "Right-of-way bioswale",
           "ROWGS": "Right-of-way greenstrip",
           "ROWRG": "Right-of-way rain garden",
-          "ROWSGS": "Right-of-way stormwater greenstrip"
+          "ROWSGS": "Right-of-way stormwater greenstreet",
+          "ROWEB": "Right-of-way enhanced bioretention"
         }
       },
+      "complete": {
+        "field": "status",
+        "starts_with": "Constructed",
+        "group_field": "status_gro"
+      },
+      "built_date": {
+        "fields": [
+          "constructed_date",
+          "constructe",
+          "constracte"
+        ],
+        "min_year": 2000
+      },
       "style": {
-        "color": "#1a9e6e",
-        "radius": 2.5
+        "color": "#2b8a3e",
+        "border": "#17602a",
+        "shape": "square",
+        "radius": 3,
+        "fill": 0.7,
+        "weight": 1
       },
       "minZoom": 12,
-      "on": false
+      "on": false,
+      "only": "complete"
     },
     {
-      "id": "gi_porous",
+      "id": "gi_green_grey",
       "group": "Green Infrastructure",
-      "name": "Porous pavement",
+      "name": "Green-Grey Infrastructure",
       "files": [
-        "NYC_Green_Infrastructure_*/DEP_Green_Infrastructure_(Porous_Pavement_Right_of_Way_Practices)_*.json"
+        "NYC_Green_Infrastructure_*/DEP_Green_Infrastructure_(Point_Layer)_*.json",
+        "NYC_Green_Infrastructure_*/DEP_Green_Infrastructure_(Porous_Pavement_Right_of_Way_Practices)_*.json",
+        "NYC_Green_Infrastructure_*/DEP_Green_Infrastructure_(Medians)_*.json",
+        "NYC_Green_Infrastructure_*/DEP_Green_Infrastructure_(Regulated_Projects)_*.json"
       ],
+      "file_labels": {
+        "NYC_Green_Infrastructure_*/DEP_Green_Infrastructure_(Porous_Pavement_Right_of_Way_Practices)_*.json": "Porous Pavement",
+        "NYC_Green_Infrastructure_*/DEP_Green_Infrastructure_(Medians)_*.json": "Median",
+        "NYC_Green_Infrastructure_*/DEP_Green_Infrastructure_(Regulated_Projects)_*.json": "Regulated Project"
+      },
+      "where": {
+        "field": "asset_type",
+        "in_list": "green_grey_types"
+      },
       "title": "asset_type",
       "fields": {
-        "status_gro": "Status",
+        "_status": "Status",
+        "_built": "Constructed",
         "project_na": "Project",
         "nyc_waters": "Waterbody",
         "outfall": "Outfall"
       },
+      "values": {
+        "asset_type": {
+          "ROWB": "Right-of-way bioswale",
+          "ROWGS": "Right-of-way greenstrip",
+          "ROWRG": "Right-of-way rain garden",
+          "ROWSGS": "Right-of-way stormwater greenstreet",
+          "ROWEB": "Right-of-way enhanced bioretention"
+        }
+      },
+      "complete": {
+        "field": "status",
+        "starts_with": "Constructed",
+        "group_field": "status_gro"
+      },
+      "built_date": {
+        "fields": [
+          "constructed_date",
+          "constructe",
+          "constracte"
+        ],
+        "min_year": 2000
+      },
       "style": {
-        "color": "#3d7a4a",
-        "fill": 0.5,
+        "color": "#9aa892",
+        "border": "#56654f",
+        "shape": "square",
+        "radius": 3,
+        "fill": 0.7,
         "weight": 1
       },
       "minZoom": 12,
-      "on": false
+      "on": false,
+      "only": "complete"
     },
     {
-      "id": "gi_medians",
+      "id": "gi_pipeline",
       "group": "Green Infrastructure",
-      "name": "Medians",
+      "name": "Pipeline Projects",
       "files": [
-        "NYC_Green_Infrastructure_*/DEP_Green_Infrastructure_(Medians)_*.json"
-      ],
-      "title": "project_na",
-      "fields": {
-        "asset_type": "Type",
-        "status_gro": "Status",
-        "nyc_waters": "Waterbody",
-        "outfall": "Outfall"
-      },
-      "style": {
-        "color": "#5f8f2e",
-        "fill": 0.5,
-        "weight": 1
-      },
-      "minZoom": 12,
-      "on": false
-    },
-    {
-      "id": "gi_regulated",
-      "group": "Green Infrastructure",
-      "name": "Regulated projects",
-      "files": [
+        "NYC_Green_Infrastructure_*/DEP_Green_Infrastructure_(Point_Layer)_*.json",
+        "NYC_Green_Infrastructure_*/DEP_Green_Infrastructure_(Porous_Pavement_Right_of_Way_Practices)_*.json",
+        "NYC_Green_Infrastructure_*/DEP_Green_Infrastructure_(Medians)_*.json",
         "NYC_Green_Infrastructure_*/DEP_Green_Infrastructure_(Regulated_Projects)_*.json"
       ],
-      "title": "project_na",
+      "file_labels": {
+        "NYC_Green_Infrastructure_*/DEP_Green_Infrastructure_(Porous_Pavement_Right_of_Way_Practices)_*.json": "Porous Pavement",
+        "NYC_Green_Infrastructure_*/DEP_Green_Infrastructure_(Medians)_*.json": "Median",
+        "NYC_Green_Infrastructure_*/DEP_Green_Infrastructure_(Regulated_Projects)_*.json": "Regulated Project"
+      },
+      "title": "asset_type",
       "fields": {
-        "asset_type": "Type",
-        "status_gro": "Status",
+        "_status": "Status",
+        "project_na": "Project",
         "nyc_waters": "Waterbody",
         "outfall": "Outfall"
       },
+      "values": {
+        "asset_type": {
+          "ROWB": "Right-of-way bioswale",
+          "ROWGS": "Right-of-way greenstrip",
+          "ROWRG": "Right-of-way rain garden",
+          "ROWSGS": "Right-of-way stormwater greenstreet",
+          "ROWEB": "Right-of-way enhanced bioretention"
+        }
+      },
+      "complete": {
+        "field": "status",
+        "starts_with": "Constructed",
+        "group_field": "status_gro"
+      },
+      "built_date": {
+        "fields": [
+          "constructed_date",
+          "constructe",
+          "constracte"
+        ],
+        "min_year": 2000
+      },
       "style": {
-        "color": "#0f5c45",
-        "fill": 0.45,
-        "weight": 1
+        "shape": "square",
+        "radius": 3,
+        "weight": 1.6,
+        "pipeline": true,
+        "borders": {
+          "Green-Grey Infrastructure": "#56654f",
+          "Vegetated Green Infrastructure": "#17602a"
+        }
       },
       "minZoom": 12,
-      "on": false
+      "on": false,
+      "only": "pipeline",
+      "categories": {
+        "field": "asset_type",
+        "label": "Category",
+        "classes": [
+          {
+            "list": "green_grey_types",
+            "label": "Green-Grey Infrastructure",
+            "color": "#9aa892"
+          }
+        ],
+        "other": {
+          "label": "Vegetated Green Infrastructure",
+          "color": "#2b8a3e"
+        }
+      }
     }
-  ]
+  ],
+  "lists": {
+    "_note": "Green infrastructure asset types (the asset_type field), sorted into the two map layers. Anything in green_grey_types is drawn as Green-Grey Infrastructure; everything else, including types not listed anywhere, is drawn as Vegetated Green Infrastructure. vegetated_types only documents the choices: the build prints a note for any type in neither list.",
+    "vegetated_types": [
+      "ROWB",
+      "ROWEB",
+      "ROWGS",
+      "ROWRG",
+      "ROWSGS",
+      "ROW Bioswale",
+      "Rain Garden",
+      "Green Roof",
+      "Rooftop Farm",
+      "Combined Blue/Green Roof",
+      "ROW Infiltration Basin with Grass Top",
+      "ROW Infiltration Basin with Combination of Concrete and Grass Top",
+      "Engineered Soil Tree Pit",
+      "Tree Planting Preservation",
+      "Stormwater Planter",
+      "Constructed Wetland",
+      "Constructed Wetlands",
+      "ROW Median",
+      "Impervious Area Reduction",
+      "Other area reduction technique",
+      "Multiple GI Components",
+      "Multiple GI Components Detention",
+      "Multiple Assets"
+    ],
+    "green_grey_types": [
+      "ROW Infiltration Basin with Concrete Top",
+      "Infiltration Basin with Concrete Top",
+      "Infiltration Basin",
+      "ROW Porous Concrete",
+      "ROW Porous Asphalt",
+      "ROW Permeable Pavement",
+      "Porous Concrete",
+      "Porous Asphalt",
+      "Permeable Pavers",
+      "Synthetic Turf Field Storage Layer",
+      "Blue Roof",
+      "Subsurface Storage",
+      "Subsurface Detention System",
+      "Subsurface Pipe",
+      "Subsurface Pipe/Broken Stone",
+      "Detention System",
+      "Detention System (Connected to Sewer)",
+      "Drywell",
+      "Gravel Bed",
+      "Cistern",
+      "Rainwater Harvesting",
+      "Stormwater Gallery",
+      "Media Filter",
+      "ROW Median Non-Vegetated"
+    ]
+  }
 }

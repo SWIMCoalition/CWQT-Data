@@ -30,8 +30,10 @@ Outputs (written to ./cwqt_outputs by default)
   2_waterbody_comparison.png         Recent geomean by waterbody, one dot per site
   3_rainfall_effect.png              How results change with rainfall in the prior ~72 hours
   4_rain_recovery.png                How bacteria fall in the days after rain, by kind of waterbody
-  5_latest_30_days_by_waterbody.png  Latest 30-day geomean by waterbody, one dot per site
-  6_site_by_season_heatmap.png       Every site x every season, colored by seasonal geomean
+  5_green_infrastructure.png         Green infrastructure built per year (running total), the pipeline,
+                                     and the most common types (from the DEP files in data/)
+  6_latest_30_days_by_waterbody.png  Latest 30-day geomean by waterbody, one dot per site
+  7_site_by_season_heatmap.png       Every site x every season, colored by seasonal geomean
   site_timeseries.pdf                Every site, two pages each: (1) seasonal geomean by year,
                                      (2) every regular-season sample, by season
   sites/site-NNN.pdf                 The same two pages for each site on its own (linked from the map)
@@ -163,8 +165,18 @@ SITE_GROUP_OVERRIDES = {2: "Creeks, canals & basins",    # Wallabout Channel
 GROUP_COLORS = {"Major rivers & harbor": "#0d4ab2", "Creeks, canals & basins": "#eb6834",
                 "Bays & coves": "#2f9e8f"}               # checked for color-blind separation
 
+# Green infrastructure chart. It reads the files, status rule and construction dates of this map
+# layer in data/layers.json, and sorts asset types with the green-grey list there (everything
+# else counts as vegetated), so the chart always matches the map.
+GI_LAYER = "gi_vegetated"
+GI_GREEN_GREY_LIST = "green_grey_types"
+GI_COLORS = {"Vegetated": "#2b8a3e", "Green-grey": "#9aa892"}      # same as the map; checked for
+GI_BORDERS = {"Vegetated": "#17602a", "Green-grey": "#56654f"}     # color-blind separation
+GI_FIRST_YEAR = 2010       # the cumulative bars start here (earlier installations are included)
+GI_TOP_TYPES = 6           # the pie shows this many types, plus "Other"
+
 CATEGORY_LABELS = {
-    "good": f"Good: geomean ≤ {GOOD_MAX}",
+    "good": f"Good: ≤ {GOOD_MAX}",
     "advisory": f"Advisory: {GOOD_MAX}–{ADVISORY_MAX}",
     "poor": f"Poor: > {ADVISORY_MAX}",
     "nodata": "No data",
@@ -569,14 +581,15 @@ def _chart_logo():
     return _LOGO_IMG
 
 
-def _brand_footer(fig, logo_height_in=0.36):
+def _brand_footer(fig, logo_height_in=0.36, note=None):
     """Add a footer strip below everything on the figure: source text on the left and
     the SWIM logo on the right. Placed below the chart, so it never covers data."""
     renderer = fig.canvas.get_renderer()
     bb = fig.get_tightbbox(renderer)          # in inches
     fw, fh = fig.get_size_inches()
     top = bb.y0 - 0.08                         # just under the lowest element
-    note = f"{CHART_FOOTER}  ·  {_footer_note}" if _footer_note else CHART_FOOTER
+    note = note if note is not None else _footer_note
+    note = f"{CHART_FOOTER}  ·  {note}" if note else CHART_FOOTER
     fig.text(bb.x0 / fw, (top - logo_height_in / 2) / fh, note, ha="left", va="center",
              fontsize=8, color=INK_2)
     img = _chart_logo()
@@ -709,7 +722,7 @@ def chart_program_trend(season, site_year, out: Path, tables: Path):
     plt.close(fig)
 
 
-# ---- 6. Site x season heatmap ----------------------------------------------
+# ---- 7. Site x season heatmap ----------------------------------------------
 
 def chart_site_heatmap(site_year, sites, out: Path, tables: Path):
     sy = site_year.merge(sites[["site_id", "site", "waterbody"]], on="site_id")
@@ -943,7 +956,161 @@ def chart_rain_recovery(season, out: Path, tables: Path):
     plt.close(fig)
 
 
-# ---- 5. Latest 30 days, by waterbody ----------------------------------------
+# ---- 5. Green infrastructure installations ----------------------------------
+
+def load_gi() -> tuple[pd.DataFrame, pd.Timestamp | None]:
+    """Every green infrastructure asset from the GI_LAYER files in data/: its asset type,
+    category (vegetated / green-grey), whether it's finished (same rule as the map) and, for
+    finished ones, the construction date. Also returns the download date from the file names."""
+    cfg_path = DATA_DIR / "layers.json"
+    if not cfg_path.exists():
+        return pd.DataFrame(), None
+    cfg = json.loads(cfg_path.read_text(encoding="utf-8"))
+    L = next((l for l in cfg.get("layers", []) if l.get("id") == GI_LAYER), None)
+    if not L or not L.get("complete"):
+        return pd.DataFrame(), None
+    green_grey = set(cfg.get("lists", {}).get(GI_GREEN_GREY_LIST, []))
+    names = L.get("values", {}).get(L.get("title"), {})
+    today = pd.Timestamp.now().normalize()
+    rows, downloaded = [], None
+    for pattern in L["files"]:
+        matches = sorted(DATA_DIR.glob(pattern))
+        if not matches:
+            continue
+        f = matches[-1]
+        m = re.search(r"(20\d\d)(\d\d)(\d\d)", f.name)
+        if m:
+            d = pd.Timestamp(int(m[1]), int(m[2]), int(m[3]))
+            downloaded = d if downloaded is None else max(downloaded, d)
+        for feat in json.loads(f.read_text(encoding="utf-8")).get("features", []):
+            p = feat.get("properties") or {}
+            t = str(_clean_value(p.get("asset_type")) or "")
+            done, _ = _gi_done(p, L["complete"], L.get("built_date"), today)
+            built = _gi_built_date(p, L["built_date"], today) if done and L.get("built_date") else None
+            rows.append({"asset_type": t, "name": names.get(t, t),
+                         "category": "Green-grey" if t in green_grey else "Vegetated",
+                         "finished": done, "built": built})
+    return pd.DataFrame(rows), downloaded
+
+
+def _gi_type_label(name: str) -> str:
+    """'ROW Infiltration Basin with Concrete Top' -> 'Right-of-way infiltration basin, concrete top'"""
+    if name.startswith("ROW "):
+        name = "Right-of-way " + name[4:]
+    name = name.replace(" with ", ", ")
+    return name[:1] + name[1:].lower()
+
+
+def chart_green_infrastructure(gi: pd.DataFrame, downloaded, out: Path, tables: Path):
+    from matplotlib.gridspec import GridSpec
+    import textwrap
+    cats = list(GI_COLORS)
+    done = gi[gi.finished]
+    dated = done.dropna(subset=["built"])
+    years = dated.built.dt.year.astype(int)
+    last = int(downloaded.year if downloaded is not None else years.max())
+    span = list(range(GI_FIRST_YEAR, last + 1))
+    per_year = dated.groupby([years.clip(lower=GI_FIRST_YEAR), "category"]).size().unstack(fill_value=0)
+    cum = per_year.reindex(span, fill_value=0).reindex(columns=cats, fill_value=0).cumsum()
+    pipe = gi[~gi.finished].category.value_counts().reindex(cats, fill_value=0)
+    t = cum.copy()
+    t.columns = [f"{c.lower()}_cumulative" for c in cats]
+    t["new_this_year"] = per_year.reindex(span, fill_value=0).sum(axis=1)
+    _r(t.rename_axis("year").reset_index()).to_csv(tables / "green_infrastructure_by_year.csv", index=False)
+
+    fig = plt.figure(figsize=(12.6, 5.6))
+    gs = GridSpec(1, 2, width_ratios=[1.75, 1], wspace=0.12, figure=fig)
+    ax = fig.add_subplot(gs[0])
+    x = np.arange(len(span))
+    xp = len(span) + 0.9                       # the pipeline bar, set apart from the years
+    bottom = np.zeros(len(span))
+    for c in cats:
+        ax.bar(x, cum[c].values, 0.78, bottom=bottom, color=GI_COLORS[c], edgecolor=SURFACE, lw=0.8,
+               label=f"{c} (built)", zorder=3)
+        bottom += cum[c].values
+    pb = 0
+    plt.rcParams["hatch.linewidth"] = 0.8
+    for c in cats:
+        ax.bar(xp, pipe[c], 0.78, bottom=pb, facecolor=GI_COLORS[c] + "4d", edgecolor=GI_BORDERS[c],
+               hatch="////", lw=1.1, ls=(0, (3, 2)), zorder=3)
+        pb += pipe[c]
+    top = max(bottom.max(), pb)
+    for i in [i for i, y in enumerate(span) if y % 5 == 0 and y < last - 1] + [len(span) - 1]:
+        ax.text(x[i], bottom[i] + top * 0.012, f"{bottom[i]:,.0f}", ha="center", va="bottom",
+                fontsize=8, color=INK_2)
+    ax.text(xp, pb + top * 0.012, f"{pb:,.0f}", ha="center", va="bottom", fontsize=8, color=INK_2)
+    ax.set_xticks(list(x) + [xp])
+    ax.set_xticklabels([f"’{y % 100:02d}" if y != last else f"{y}*" for y in span] + ["Pipeline"],
+                       fontsize=8)
+    for lab in ax.get_xticklabels()[-2:]:
+        lab.set_fontweight("semibold")
+    ax.set_xlim(-0.7, xp + 0.7)
+    ax.set_ylim(0, top * 1.1)
+    ax.yaxis.set_major_formatter(FuncFormatter(_fmt_int))
+    ax.grid(axis="x", visible=False)
+    ax.set_ylabel("Installations built (running total)")
+    ax.set_title("Green infrastructure installations in NYC", pad=28)
+    _subtitle(ax, f"Running total of finished installations by the year built, and projects still in design or construction.")
+    handles = [Patch(facecolor=GI_COLORS[c], edgecolor=SURFACE, label=c) for c in cats] + \
+              [Patch(facecolor="#ffffff", edgecolor=GI_BORDERS["Green-grey"], hatch="////", ls=(0, (3, 2)),
+                     label="Pipeline (in design or construction)")]
+    ax.legend(handles=handles, loc="upper left", fontsize=8.5)
+    undated = len(done) - len(dated)
+    early = int((years < GI_FIRST_YEAR).sum())
+    notes = [f"* {last} as of the data download"
+             + (f" ({downloaded:%b %-d, %Y})" if downloaded is not None else "") + "."]
+    if early:
+        notes.append(f"’{GI_FIRST_YEAR % 100:02d} includes {early} built earlier.")
+    if undated:
+        notes.append(f"{undated} finished installations without a valid construction date aren't counted.")
+    ax.annotate("\n".join(textwrap.wrap("  ".join(notes), 110)), xy=(0, 0), xycoords="axes fraction", xytext=(0, -30),
+                textcoords="offset points", fontsize=7.6, color=INK_2, va="top", ha="left")
+
+    # Right: most common types among finished installations
+    axp = fig.add_subplot(gs[1])
+    counts = done.groupby(["name", "category"]).size().sort_values(ascending=False)
+    top_t = counts.iloc[:GI_TOP_TYPES]
+    other = int(counts.iloc[GI_TOP_TYPES:].sum())
+    labels = [_gi_type_label(n) for n, _ in top_t.index] + (["Other types"] if other else [])
+    vals = list(top_t.values) + ([other] if other else [])
+    shades = {"Vegetated": ["#2b8a3e", "#4fa85d", "#78c083", "#a3d6a9", "#c6e6c9"],
+              "Green-grey": ["#9aa892", "#b5c0ae", "#cdd5c8", "#e0e5dc"]}
+    used = {c: 0 for c in cats}
+    colors = []
+    for _, c in top_t.index:
+        colors.append(shades[c][min(used[c], len(shades[c]) - 1)])
+        used[c] += 1
+    if other:
+        colors.append("#e7e6e0")
+    tot = sum(vals)
+    wedges, _ = axp.pie(vals, colors=colors, startangle=90, counterclock=False,
+                        wedgeprops={"edgecolor": SURFACE, "linewidth": 1.5}, radius=1.0)
+    for w, v in zip(wedges, vals):          # percentages inside the larger slices
+        if v / tot >= 0.06:
+            ang = np.deg2rad((w.theta1 + w.theta2) / 2)
+            dark = w.get_facecolor()[:3] in [matplotlib.colors.to_rgb(c) for c in ("#2b8a3e", "#4fa85d")]
+            axp.text(0.66 * np.cos(ang), 0.66 * np.sin(ang), f"{100 * v / tot:.0f}%", ha="center",
+                     va="center", fontsize=9, fontweight="semibold", color=SURFACE if dark else INK)
+    key = [Patch(facecolor=c, edgecolor="#c3c2b7" if c == "#e7e6e0" else c,
+                 label=f"{lab}  ·  {v:,} ({100 * v / tot:.0f}%)") for c, lab, v in zip(colors, labels, vals)]
+    axp.legend(handles=key, loc="upper center", bbox_to_anchor=(0.5, -0.03), ncol=1, fontsize=8,
+               handlelength=1.1, handleheight=1.1, labelspacing=0.45, borderaxespad=0)
+    axp.set_aspect("equal")
+    axp.set_title("Most common types of finished installations", fontsize=10.5, pad=24, loc="center")
+    axp.annotate("Green shades are vegetated types, gray-green shades green-grey", xy=(0.5, 1.0),
+                 xycoords="axes fraction", xytext=(0, 6), textcoords="offset points", ha="center",
+                 va="bottom", fontsize=8, color=INK_2)
+    _r(counts.rename("installations").reset_index()).to_csv(tables / "green_infrastructure_types.csv",
+                                                             index=False)
+    src = "Green infrastructure: NYC DEP via NYC Open Data"
+    if downloaded is not None:
+        src += f", downloaded {downloaded:%b %-d, %Y}"
+    _brand_footer(fig, note=src)
+    fig.savefig(out)
+    plt.close(fig)
+
+
+# ---- 6. Latest 30 days, by waterbody ----------------------------------------
 
 def chart_latest_window(samples, win, out: Path, tables: Path):
     start, end = win.window_start.iloc[0], win.window_end.iloc[0]
@@ -987,7 +1154,7 @@ def chart_latest_window(samples, win, out: Path, tables: Path):
     plt.close(fig)
 
 
-# ---- 7. Per-site time series PDF -------------------------------------------
+# ---- 8. Per-site time series PDF -------------------------------------------
 
 def _season_x(dates: pd.Series, seasons: list[int]) -> pd.Series:
     """Place each date inside its season's slot: season i spans x = i .. i+1."""
@@ -1344,6 +1511,37 @@ def _clean_value(v):
     return v
 
 
+def _gi_built_date(raw, built, today):
+    """The construction date of a feature, or None if it's missing or implausible
+    (before built_date's min_year, e.g. the 1899-12-30 "no date" placeholder, or in the future)."""
+    d = next((raw.get(k) for k in built["fields"] if raw.get(k)), None)
+    d = pd.to_datetime(d, errors="coerce") if d else pd.NaT
+    return d if pd.notna(d) and built.get("min_year", 0) <= d.year and d <= today else None
+
+
+def _status_group(status: str) -> str:
+    """The status group DEP derives from a detailed status (true in every row of the Point Layer,
+    Porous Pavement and Medians files)."""
+    if status.startswith("Constructed"):
+        return "Constructed"
+    return "In Construction" if status == "In Construction" else "Final Design"
+
+
+def _gi_done(raw, complete, built, today):
+    """Is a green infrastructure feature finished? Returns (done, status text for the popup).
+    A feature is finished when its status starts with complete["starts_with"]. If the file also
+    has a status group (complete["group_field"]) that disagrees, as happens in Regulated Projects,
+    the construction date breaks the tie: finished only with a valid construction date."""
+    status = str(raw.get(complete["field"]) or "").strip()
+    done = status.startswith(complete["starts_with"])
+    group = str(raw.get(complete.get("group_field", "")) or "").strip()
+    if status and group and _status_group(status) != group:
+        if (group == "Constructed") != done:
+            done = bool(built) and _gi_built_date(raw, built, today) is not None
+        return done, f"{status} (status group: {group})"
+    return done, status or None
+
+
 def build_data_layers(out: Path) -> list[dict]:
     """Turn the files listed in data/layers.json into small GeoJSON files in out/layers/
     (only the fields the popups use, coordinates rounded to ~1 m, outlines simplified).
@@ -1352,22 +1550,37 @@ def build_data_layers(out: Path) -> list[dict]:
     if not cfg_path.exists():
         return []
     cfg = json.loads(cfg_path.read_text(encoding="utf-8"))
+    lists = {k: set(v) for k, v in cfg.get("lists", {}).items() if isinstance(v, list)}
+    today = pd.Timestamp.now().normalize()
     layer_dir = out / "layers"
     layer_dir.mkdir(parents=True, exist_ok=True)
     metas = []
     for L in cfg.get("layers", []):
-        files = []
+        files, file_label = [], {}
         for pattern in L["files"]:
             matches = sorted(DATA_DIR.glob(pattern))
             if matches:
                 files.append(matches[-1])          # newest dated download wins
+                file_label[matches[-1]] = L.get("file_labels", {}).get(pattern)
         if not files:
             print(f"  note: no file in data/ matches layer '{L['name']}' ({', '.join(L['files'])}); skipped")
             continue
         cats = L.get("categories")
         values = L.get("values", {})
-        keep = [k for k in [L.get("title"), L.get("subtitle"), L.get("contacts")] + list(L.get("fields", {})) if k]
+        complete, built = L.get("complete"), L.get("built_date")
+        only = L.get("only")              # "complete" or "pipeline": keep just those features
+        # Fields made here rather than read from the file: "_source" (the file's label),
+        # "_done" (1 = finished, 0 = in design/construction), "_built" (month and year finished)
+        # and "_status" (the status, noting the status group when the two disagree)
+        made = ["_source"] if L.get("file_labels") else []
+        made += ["_done"] if complete and not only else []
+        keep = [k for k in [L.get("title"), L.get("subtitle"), L.get("contacts")] + list(L.get("fields", {}))
+                + made if k]
+        keep = list(dict.fromkeys(keep))
+        if not built:
+            keep = [k for k in keep if k != "_built"]
         where = L.get("where")
+        unlisted = {}
         if cats and cats["field"] not in keep:
             keep.append(cats["field"])
         # Compact format: every distinct value is stored once in "s" and features refer to it
@@ -1394,6 +1607,23 @@ def build_data_layers(out: Path) -> list[dict]:
                         continue
                     if "not_equals" in where and wv == str(where["not_equals"]):
                         continue
+                    if "in_list" in where and wv not in lists.get(where["in_list"], set()):
+                        continue
+                    if "not_in_list" in where and wv in lists.get(where["not_in_list"], set()):
+                        continue
+                    if "note_unless_in" in where and wv not in lists.get(where["note_unless_in"], set()):
+                        unlisted[wv or "(blank)"] = unlisted.get(wv or "(blank)", 0) + 1
+                raw = dict(raw)
+                raw["_source"] = file_label.get(f)
+                if complete:
+                    done, raw["_status"] = _gi_done(raw, complete, built, today)
+                    if only and (only == "complete") != done:
+                        continue
+                    raw["_done"] = "1" if done else "0"
+                    if built and done:   # month and year finished, only for finished features
+                        d = _gi_built_date(raw, built, today)
+                        if d is not None:
+                            raw["_built"] = f"{d:%B %Y}"
                 vals = []
                 for k in keep:
                     v = _clean_value(raw.get(k))
@@ -1403,13 +1633,18 @@ def build_data_layers(out: Path) -> list[dict]:
                 row = [gs["coordinates"] if g["type"] == "Point" else gs, vals]
                 if cats:
                     rv = str(_clean_value(raw.get(cats["field"])))
-                    row.append(next((i for i, c in enumerate(cats["classes"]) if rv in c["values"]),
+                    row.append(next((i for i, c in enumerate(cats["classes"])
+                                     if rv in c.get("values", []) or rv in lists.get(c.get("list"), ())),
                                     len(cats["classes"])))
                 rows.append(row)
+        if unlisted:
+            print(f"  note: types not in the '{where['note_unless_in']}' list, drawn as "
+                  f"'{L['name']}' or its pipeline (check data/layers.json): "
+                  + ", ".join(f"{k} ({n})" for k, n in sorted(unlisted.items())))
+        # Points stay as plain [lon, lat] even when a layer also has shapes; the map draws only the
+        # points on screen and every shape.
         points = kinds == {"point"}
-        if not points:   # mixed layer: store every geometry in full
-            rows = [[{"type": "Point", "coordinates": r[0]} if isinstance(r[0], list) else r[0], *r[1:]]
-                    for r in rows]
+        kind = "point" if points else "shape" if kinds == {"shape"} else "mixed"
         path = layer_dir / f"{L['id']}.json"
         path.write_text(json.dumps({"k": keep, "s": strings, "p": points, "f": rows},
                                    separators=(",", ":"), ensure_ascii=False), encoding="utf-8")
@@ -1421,7 +1656,7 @@ def build_data_layers(out: Path) -> list[dict]:
             "subtitle": L.get("subtitle"), "contacts": L.get("contacts"), "hover": bool(L.get("hover")),
             "fields": [[k, lab] for k, lab in L.get("fields", {}).items()],
             "style": L.get("style", {}), "minZoom": L.get("minZoom", 0), "on": bool(L.get("on")),
-            "kind": "point" if points else "shape",
+            "kind": kind, "complete": bool(complete) and not only, "pipeline": only == "pipeline",
             "categories": ({"label": cats.get("label", ""),
                             "classes": [{"label": c["label"], "color": c["color"]} for c in cats["classes"]]
                                        + [cats.get("other", {"label": "Other", "color": "#8a8f99"})]}
@@ -1468,18 +1703,19 @@ def build_map(season, sites, site_all, site_year, win, pdfs: dict, logo: str, ou
 
     # Order of the choices under Layers > CWQT water quality. The first one is shown when
     # the map opens; "earlier": True puts a season under the nested "Earlier seasons" list.
+    # "legend" is the part in brackets in the legend title, e.g. "Enterococcus Bacteria Levels (2026)".
     seasons = sorted((int(y) for y in site_year.year.unique()), reverse=True)
-    layers = [{"name": f"{seasons[0]} season", "label": f"{seasons[0]} season",
+    layers = [{"name": f"{seasons[0]} season", "label": f"{seasons[0]} season", "legend": str(seasons[0]),
                "rows": _stat_rows(site_year[site_year.year == seasons[0]], ids)}]
     if win is not None and len(win):
         s0, s1 = win.window_start.iloc[0], win.window_end.iloc[0]
         layers.append({"name": f"Latest 30 days ({s0:%b %-d}–{s1:%b %-d})",
-                       "label": f"30 days, {s0:%b %-d}–{s1:%b %-d, %Y}",
+                       "label": f"30 days, {s0:%b %-d}–{s1:%b %-d, %Y}", "legend": "Latest 30 Days",
                        "rows": _stat_rows(win, ids)})
-    layers.append({"name": f"All seasons ({y0}–{y1})", "label": f"all seasons {y0}–{y1}",
+    layers.append({"name": f"All seasons ({y0}–{y1})", "label": f"all seasons {y0}–{y1}", "legend": "All Seasons",
                    "rows": _stat_rows(site_all, ids)})
     for y in seasons[1:]:
-        layers.append({"name": f"{y} season", "label": f"{y} season", "earlier": True,
+        layers.append({"name": f"{y} season", "label": f"{y} season", "legend": str(y), "earlier": True,
                        "rows": _stat_rows(site_year[site_year.year == y], ids)})
 
     data = {
@@ -1511,7 +1747,8 @@ def build_map(season, sites, site_all, site_year, win, pdfs: dict, logo: str, ou
     out.write_text(page.replace("{{DATA}}", payload, 1), encoding="utf-8")
 
 
-def build_charts_page(season, sites, win, pdfs: dict, logo: str, out: Path):
+def build_charts_page(season, sites, win, pdfs: dict, logo: str, out: Path,
+                      gi: pd.DataFrame | None = None, gi_downloaded=None):
     """Write the charts page (charts.html) from templates/charts.html."""
     have = sites[sites.site_id.isin(season.site_id)]
     y0, y1 = int(season.year.min()), int(season.year.max())
@@ -1545,6 +1782,9 @@ def build_charts_page(season, sites, win, pdfs: dict, logo: str, out: Path):
         "MIN_N": MIN_SAMPLES_FOR_GEOMEAN,
         "BUILT": pd.Timestamp.now(tz="America/New_York").strftime("%b %-d, %Y"),
         "SITE_LIST": "\n".join(parts),
+        "GI_BUILT": f"{int(gi.finished.sum()):,}" if gi is not None and len(gi) else "—",
+        "GI_PIPELINE": f"{int((~gi.finished).sum()):,}" if gi is not None and len(gi) else "—",
+        "GI_DOWNLOADED": f"{gi_downloaded:%B %-d, %Y}" if gi_downloaded is not None else "the latest download",
     }
     page = _fill(_template("charts.html"), values)
     _warn_unfilled(page, "charts.html")
@@ -1660,10 +1900,15 @@ def main(argv=None):
         ("2_waterbody_comparison.png", lambda p: chart_waterbodies(season, p, tables)),
         ("3_rainfall_effect.png", lambda p: chart_rainfall(season, p, tables)),
         ("4_rain_recovery.png", lambda p: chart_rain_recovery(season, p, tables)),
-        ("5_latest_30_days_by_waterbody.png", lambda p: chart_latest_window(samples, win, p, tables)),
-        ("6_site_by_season_heatmap.png", lambda p: chart_site_heatmap(site_year, sites, p, tables)),
+        ("5_green_infrastructure.png", lambda p: chart_green_infrastructure(gi, gi_downloaded, p, tables)),
+        ("6_latest_30_days_by_waterbody.png", lambda p: chart_latest_window(samples, win, p, tables)),
+        ("7_site_by_season_heatmap.png", lambda p: chart_site_heatmap(site_year, sites, p, tables)),
     ]
+    gi, gi_downloaded = load_gi()
     for name, fn in steps:
+        if name.startswith("5_green") and gi.empty:
+            print(f"  note: no green infrastructure files found in data/; skipped {name}")
+            continue
         fn(out / name)
         print(f"  wrote {out / name}")
 
@@ -1679,7 +1924,7 @@ def main(argv=None):
         extra = build_data_layers(out)
         build_map(season, sites, site_all, site_year, win, pdfs, logo, out / "index.html", extra)
         print(f"  wrote {out / 'index.html'} (map, {(out / 'index.html').stat().st_size / 1e3:,.0f} KB)")
-        build_charts_page(season, sites, win, pdfs, logo, out / "charts.html")
+        build_charts_page(season, sites, win, pdfs, logo, out / "charts.html", gi, gi_downloaded)
         print(f"  wrote {out / 'charts.html'}")
 
     # Small machine-readable summary (used by the automatic update to detect new data)

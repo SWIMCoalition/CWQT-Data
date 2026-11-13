@@ -59,6 +59,7 @@
   .legend > summary { display: flex; align-items: center; gap: 6px; font-weight: 700; }
   .legend .muted { color: var(--ink-2); }
   .legend .row { margin: 3px 0; }
+  .sw { display: inline-block; margin-right: 7px; vertical-align: -2px; flex-shrink: 0; }
   .dot { display: inline-block; width: 11px; height: 11px; border-radius: 50%; margin-right: 7px; vertical-align: -1px; }
   .leaflet-control-scale-line { font-family: var(--font-body); }
   .full-link { display: block; padding: 6px 10px; font: 600 12px var(--font-body); color: var(--brand); text-decoration: none; }
@@ -172,6 +173,45 @@
   const small = () => window.innerWidth <= 640;
   const chev = '<svg class="chev" viewBox="0 0 10 10" aria-hidden="true"><path d="M3 1.5 6.5 5 3 8.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 
+  // ---------- marker shapes ----------
+  // Drawn on the shared canvas like L.circleMarker (same options, popups and clicks); only the
+  // outline differs. Droplet = CWQT sampling sites; square = points in layers with style.shape "square".
+  const DropMarker = L.CircleMarker.extend({
+    _updateBounds() {                       // the tip reaches 2 radii above the point
+      const r = this._radius, w = this._clickTolerance();
+      this._pxBounds = L.bounds(this._point.subtract([r + w, 2 * r + w]), this._point.add([r + w, r + w]));
+    },
+    _updatePath() {
+      const R = this._renderer;
+      if (!R._drawing || this._empty()) return;
+      const p = this._point, r = Math.max(this._radius, 1), ctx = R._ctx, a = Math.PI / 6;
+      ctx.beginPath();
+      ctx.moveTo(p.x, p.y - 2 * r);                                   // tip
+      ctx.lineTo(p.x + r * Math.cos(a), p.y - r * Math.sin(a));       // where the side meets the round bottom
+      ctx.arc(p.x, p.y, r, -a, Math.PI + a, false);
+      ctx.closePath();
+      R._fillStroke(ctx, this);
+    },
+  });
+  const SquareMarker = L.CircleMarker.extend({
+    _updatePath() {
+      const R = this._renderer;
+      if (!R._drawing || this._empty()) return;
+      const p = this._point, r = Math.max(this._radius, 1), ctx = R._ctx;
+      ctx.beginPath();
+      ctx.rect(p.x - r, p.y - r, 2 * r, 2 * r);
+      R._fillStroke(ctx, this);
+    },
+  });
+  // Small SVG versions for the legend and popups
+  const dropSvg = (fill, { stroke = "#fff", dash = false, op = 1, w = 11 } = {}) =>
+    `<svg class="sw" width="${w}" height="${(w * 18.5 / 13).toFixed(1)}" viewBox="-6.5 -12 13 18.5" aria-hidden="true"><path d="M0 -11 L4.763 -2.75 A5.5 5.5 0 1 1 -4.763 -2.75 Z" fill="${fill}" fill-opacity="${op}" stroke="${stroke}" stroke-width="1.5"${dash ? ' stroke-dasharray="2.2 1.6"' : ""}/></svg>`;
+  const squareSvg = (fill, border, { dash = false, op = 1 } = {}) =>
+    `<svg class="sw" width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><rect x="1" y="1" width="10" height="10" fill="${fill}" fill-opacity="${op}" stroke="${border}" stroke-width="1.5"${dash ? ' stroke-dasharray="2 1.5"' : ""}/></svg>`;
+  // Pipeline (not yet built) key: hatched square with a dashed outline
+  const hatchSvg = (line, border) =>
+    `<svg class="sw" width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><rect x="1" y="1" width="10" height="10" fill="#fff"/><path d="M1 7L7 1M1 11L11 1M5 11L11 5" stroke="${line}" stroke-width="1.2"/><rect x="1" y="1" width="10" height="10" fill="none" stroke="${border}" stroke-width="1.5" stroke-dasharray="2.5 1.5"/></svg>`;
+
   // ---------- popup ----------
   function sparkline(pts) {
     // Seasonal geomean by year: points colored good / advisory / poor, a tick for every
@@ -220,7 +260,7 @@
     return `<div class="pop">
       <div class="name">${esc(title)}</div>
       <div class="muted" style="margin-bottom:6px">${esc(place)} · Site ID ${id}</div>
-      <div style="margin-bottom:6px"><span class="dot" style="width:10px;height:10px;margin-right:6px;background:${C.colors[cat]}"></span><b>${esc(C.labels[cat].split(":")[0])}</b> <span class="muted">(${esc(layerLabel)})</span></div>
+      <div style="margin-bottom:6px">${dropSvg(C.colors[cat], { w: 10 })}<b>${esc(C.labels[cat].split(":")[0])}</b> <span class="muted">(${esc(layerLabel)})</span></div>
       <table>
         <tr style="font-weight:700"><td>Geometric mean</td><td>${fmt(gm)} MPN/100 ml</td></tr>
         <tr><td>Most recent result</td><td>${fmt(lastMpn)} on ${dLong(last)}</td></tr>
@@ -302,8 +342,8 @@
     layer.rows.forEach(r => {
       const [id, gm, n] = r, s = D.sites[id];
       const cat = category(gm), few = n < C.minN;
-      const m = L.circleMarker([s[3], s[4]], {
-        renderer, radius: few ? 6 : 7, color: few ? C.ink2 : "#ffffff", weight: few ? 1.5 : 2,
+      const m = new DropMarker([s[3], s[4]], {
+        renderer, radius: few ? 5.2 : 6, color: few ? C.ink2 : "#ffffff", weight: few ? 1.5 : 2,
         dashArray: few ? "3,3" : null, fillColor: C.colors[cat], fillOpacity: few ? 0.55 : 0.95
       });
       if (canHover) m.bindTooltip(esc(s[0]));
@@ -319,13 +359,47 @@
     if (cwqtLayer) { map.removeLayer(cwqtLayer); cwqtLayer = null; }
     if (cwqtOn) cwqtLayer = buildCwqt(cwqtIndex).addTo(map);
     restack();
+    updateLegend();
   }
 
   // ---------- extra layers ----------
   const extraState = EXTRA.map(() => ({ checked: false, layer: null, loading: false }));
+  function extraClass(meta, f) {
+    return meta.categories ? meta.categories.classes[Math.min(f.properties._c, meta.categories.classes.length - 1)] : null;
+  }
   function extraColor(meta, f) {
-    if (meta.categories) return meta.categories.classes[Math.min(f.properties._c, meta.categories.classes.length - 1)].color;
-    return meta.style.color || "#555";
+    const c = extraClass(meta, f);
+    return c ? c.color : meta.style.color || "#555";
+  }
+  // Outline color: style.border, or per category from style.borders ({category label: color})
+  function extraBorder(meta, f) {
+    const st = meta.style || {}, c = extraClass(meta, f);
+    return (c && st.borders && st.borders[c.label]) || st.border || null;
+  }
+  // Pipeline layers (style.pipeline): points are hollow and shapes hatched, both in the category color
+  const hatches = {};
+  function hatchFill(color) {
+    if (!hatches[color]) {
+      const k = window.devicePixelRatio > 1 ? 2 : 1, t = document.createElement("canvas"), s = 8 * k, x = t.getContext("2d");
+      t.width = t.height = s; x.fillStyle = "rgba(255,255,255,0.6)"; x.fillRect(0, 0, s, s);
+      x.strokeStyle = color; x.lineWidth = s / 6; x.beginPath();
+      x.moveTo(0, s); x.lineTo(s, 0); x.moveTo(-s / 4, s / 4); x.lineTo(s / 4, -s / 4); x.moveTo(s * 3 / 4, s * 5 / 4); x.lineTo(s * 5 / 4, s * 3 / 4); x.stroke();
+      const pat = renderer._ctx.createPattern(t, "repeat");
+      if (k > 1 && pat.setTransform) pat.setTransform(new DOMMatrix().scale(1 / k));   // the map canvas is already scaled
+      hatches[color] = pat;
+    }
+    return hatches[color];
+  }
+  // Features not yet finished (layers with "complete" in layers.json, e.g. green infrastructure
+  // in design or under construction) are drawn see-through with a dotted outline.
+  const INCOMPLETE = { fillOpacity: 0.3, opacity: 0.95, weight: 1.2 };
+  function shapeStyle(meta, f) {
+    const st = meta.style || {}, c = extraColor(meta, f), done = !meta.complete || f.properties._done !== "0";
+    if (st.pipeline) return { color: extraBorder(meta, f) || c, weight: st.weight || 1.6, opacity: 1,
+                              fillColor: hatchFill(c), fillOpacity: 1, dashArray: "4,3" };
+    return { color: st.border || c, weight: done ? (st.weight || 1) : INCOMPLETE.weight, opacity: done ? 0.9 : INCOMPLETE.opacity,
+             fillColor: c, fillOpacity: done ? (st.fill === undefined ? 0.15 : st.fill) : INCOMPLETE.fillOpacity,
+             dashArray: done ? null : "3,3" };
   }
   function featureTitle(meta, p) {
     return meta.title && p[meta.title] !== undefined ? meta.titlePrefix + p[meta.title] : meta.name;
@@ -339,7 +413,11 @@
   }
   function featurePopup(meta, f) {
     const p = f.properties;
-    const sub = meta.subtitle && p[meta.subtitle] ? `${meta.group} · ${p[meta.subtitle]}` : meta.name;
+    const cls = extraClass(meta, f);
+    const sub = meta.style && meta.style.pipeline   // e.g. "Pipeline Project · Green-Grey Infrastructure · Porous Pavement"
+                ? ["Pipeline Project", cls && cls.label, p._source].filter(Boolean).join(" · ")
+              : p._source ? `${meta.name} · ${p._source}`          // e.g. "Vegetated Green Infrastructure · Regulated Project"
+              : meta.subtitle && p[meta.subtitle] ? `${meta.group} · ${p[meta.subtitle]}` : meta.name;
     let rows = meta.fields.filter(([k]) => p[k] !== undefined && p[k] !== "")
       .map(([k, lab]) => `<tr><td>${esc(lab)}</td><td>${esc(p[k])}</td></tr>`).join("");
     if (meta.contacts) {
@@ -367,14 +445,74 @@
     if (row.length > 2) props._c = row[2];
     return props;
   }
-  function pointMarker(meta, d, i) {
-    const row = d.f[i], st = meta.style || {};
-    const m = L.circleMarker([row[0][1], row[0][0]], { renderer, radius: st.radius || 3, color: "#ffffff", weight: 0.6,
-      fillColor: extraColor(meta, { properties: { _c: row[2] } }), fillOpacity: 0.9 });
-    m._row = i;
-    if (canHover && meta.hover) m.bindTooltip(esc(featureTitle(meta, rowProps(d, row))));
-    return m;
-  }
+  // All the points of one layer are drawn by a single canvas layer rather than one marker each:
+  // a Leaflet marker costs about 2.5 KB, so 15,000 green infrastructure points would take ~40 MB;
+  // this way they take well under 1 MB. Clicks find the nearest point under the pointer.
+  const PointCloud = L.Path.extend({
+    initialize(meta, d, idx, options) {
+      L.setOptions(this, options);
+      const st = meta.style || {}, di = d.k.indexOf("_done");
+      this._meta = meta; this._d = d; this._idx = idx; this._hit = -1;
+      this._r = st.radius || 3; this._square = st.shape === "square";
+      this._xy = new Float32Array(idx.length * 2);
+      this._groups = new Map();               // one path per color and finished/unfinished
+      idx.forEach((i, j) => {
+        const row = d.f[i], ff = { properties: { _c: row[2] } }, color = extraColor(meta, ff);
+        const done = !meta.complete || di < 0 || d.s[row[1][di]] !== "0";
+        const key = color + (done ? "" : " x");
+        if (!this._groups.has(key)) this._groups.set(key, { color, done, border: extraBorder(meta, ff), js: [] });
+        this._groups.get(key).js.push(j);
+      });
+    },
+    rowAt(j) { return this._d.f[this._idx[j]]; },
+    _project() {
+      const m = this._map, f = this._d.f;
+      let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+      this._idx.forEach((i, j) => {
+        const q = m.latLngToLayerPoint([f[i][0][1], f[i][0][0]]);
+        this._xy[2 * j] = q.x; this._xy[2 * j + 1] = q.y;
+        if (q.x < x0) x0 = q.x; if (q.x > x1) x1 = q.x; if (q.y < y0) y0 = q.y; if (q.y > y1) y1 = q.y;
+      });
+      const w = this._r + this._clickTolerance() + 2;
+      this._pxBounds = this._idx.length ? L.bounds([x0 - w, y0 - w], [x1 + w, y1 + w]) : null;
+    },
+    _update() { if (this._map) this._updatePath(); },
+    _empty() { return !this._pxBounds || !this._renderer._bounds.intersects(this._pxBounds); },
+    _updatePath() {
+      const R = this._renderer;
+      if (!R._drawing || this._empty()) return;
+      const ctx = R._ctx, b = R._bounds, r = this._r, st = this._meta.style || {}, xy = this._xy;
+      for (const g of this._groups.values()) {
+        ctx.beginPath();
+        for (const j of g.js) {
+          const x = xy[2 * j], y = xy[2 * j + 1];
+          if (x < b.min.x - r || x > b.max.x + r || y < b.min.y - r || y > b.max.y + r) continue;
+          if (this._square) ctx.rect(x - r, y - r, 2 * r, 2 * r);
+          else { ctx.moveTo(x + r, y); ctx.arc(x, y, r, 0, 2 * Math.PI); }
+        }
+        if (st.pipeline) {                  // hollow: white inside, outlined in the category color
+          ctx.globalAlpha = 0.9; ctx.fillStyle = "#ffffff"; ctx.fill();
+          ctx.globalAlpha = 1; ctx.strokeStyle = g.border || g.color; ctx.lineWidth = st.weight || 1.5; ctx.stroke();
+          continue;
+        }
+        ctx.globalAlpha = g.done ? 1 : INCOMPLETE.fillOpacity; ctx.fillStyle = g.color; ctx.fill();
+        ctx.globalAlpha = g.done ? 1 : INCOMPLETE.opacity; ctx.strokeStyle = g.border || "#ffffff";
+        ctx.lineWidth = g.done ? (g.border ? 1 : 0.6) : INCOMPLETE.weight;
+        ctx.setLineDash(g.done ? [] : [2, 1.5]); ctx.stroke();
+      }
+      ctx.globalAlpha = 1; ctx.setLineDash([]);
+    },
+    _containsPoint(p) {                     // remembers the nearest point within reach
+      const t = this._r + this._clickTolerance(), xy = this._xy;
+      let best = -1, bd = Infinity;
+      for (let j = 0; j < this._idx.length; j++) {
+        const dx = xy[2 * j] - p.x, dy = xy[2 * j + 1] - p.y;
+        if (Math.abs(dx) <= t && Math.abs(dy) <= t && dx * dx + dy * dy < bd) { bd = dx * dx + dy * dy; best = j; }
+      }
+      this._hit = best;
+      return best >= 0;
+    },
+  });
   function buildExtra(meta, d) {
     let g;
     if (meta.style && meta.style.icon) {
@@ -389,43 +527,39 @@
         g.addLayer(mk);
       });
       g.on("click", e => openFeature(meta, rowProps(d, d.f[e.layer._row]), e.layer.getLatLng()));
-    } else if (d.p) {
-      // Point layers: keep the compact rows and only create markers for what's on screen
-      // (refreshed after every pan/zoom), so thousands of points don't fill memory.
-      g = L.featureGroup();
-      g._d = d; g._meta = meta;
-      g.on("click", e => openFeature(meta, rowProps(d, d.f[e.layer._row]), e.latlng));
     } else {
-      g = L.geoJSON({ type: "FeatureCollection", features: d.f.map(row => ({ type: "Feature", properties: rowProps(d, row), geometry: row[0] })) }, {
-        renderer,
-        style: f => ({ color: extraColor(meta, f), weight: (meta.style || {}).weight || 1, opacity: 0.9,
-                       fillColor: extraColor(meta, f), fillOpacity: (meta.style || {}).fill === undefined ? 0.15 : meta.style.fill }),
+      // Shapes are all drawn. Points keep their compact rows ([lon, lat]) and markers are only
+      // created for what's on screen (refreshed after every pan/zoom), so thousands of points
+      // don't fill memory. A layer can have both (green infrastructure does).
+      g = L.featureGroup();
+      const pts = [], shapes = [];
+      d.f.forEach((row, i) => (typeof row[0][0] === "number" ? pts : shapes).push(i));
+      if (shapes.length) {
+        g._shapes = L.geoJSON({ type: "FeatureCollection", features: shapes.map(i => ({ type: "Feature",
+          properties: rowProps(d, d.f[i]), geometry: d.f[i][0] })) }, { renderer, style: f => shapeStyle(meta, f) });
+        g.addLayer(g._shapes);
+      }
+      if (pts.length) { g._points = new PointCloud(meta, d, pts, { renderer }); g.addLayer(g._points); }
+      g.on("click", e => {
+        const l = e.layer;                 // the shape or point layer that was clicked
+        if (l.feature) openFeature(meta, l.feature.properties, e.latlng);
+        else if (l === g._points && l._hit >= 0) {
+          const row = l.rowAt(l._hit);
+          openFeature(meta, rowProps(d, row), L.latLng(row[0][1], row[0][0]));
+        }
       });
-      g.on("click", e => openFeature(meta, e.layer.feature.properties, e.latlng));
     }
     return g;
   }
-  // Only the difference is updated after a pan/zoom: points that left the view are removed,
-  // points that entered it are created; points still in view are kept as they are.
-  function refreshPoints(g) {
-    if (!g._d || !map.hasLayer(g)) return;
-    const b = map.getBounds().pad(0.25), d = g._d, S = b.getSouth(), N = b.getNorth(), W = b.getWest(), E = b.getEast();
-    const inView = c => c[1] >= S && c[1] <= N && c[0] >= W && c[0] <= E;
-    const shown = g._shown || (g._shown = new Map());
-    for (const [i, mk] of shown) if (!inView(d.f[i][0])) { g.removeLayer(mk); shown.delete(i); }
-    for (let i = 0; i < d.f.length; i++) {
-      if (!shown.has(i) && inView(d.f[i][0])) { const mk = pointMarker(g._meta, d, i); shown.set(i, mk); g.addLayer(mk); }
-    }
-  }
-  function clearPoints(g) { g.clearLayers(); g._shown = null; }
   function openFeature(meta, props, latlng) {
     L.popup({ maxWidth: Math.min(320, window.innerWidth - 50) }).setLatLng(latlng)
       .setContent(featurePopup(meta, { properties: props })).openOn(map);
   }
   // Draw order: shapes, then points, then CWQT sites on top.
   function restack() {
-    EXTRA.forEach((m, i) => { const l = extraState[i].layer;
-      if (m.kind === "point" && l && map.hasLayer(l)) l.eachLayer(x => { if (x.bringToFront) x.bringToFront(); }); });
+    const on = EXTRA.map((m, i) => extraState[i].layer).filter(l => l && map.hasLayer(l));
+    on.forEach(l => { if (l._shapes) l._shapes.bringToFront(); });
+    on.forEach(l => { if (l._points) l._points.bringToFront(); });
     if (cwqtLayer) cwqtLayer.eachLayer(x => x.bringToFront());
   }
   function syncExtra() {
@@ -434,8 +568,7 @@
       const st = extraState[i], show = st.checked && z >= (meta.minZoom || 0);
       if (st.layer) {
         if (show && !map.hasLayer(st.layer)) st.layer.addTo(map);
-        if (!show && map.hasLayer(st.layer)) { map.removeLayer(st.layer); if (st.layer._d) clearPoints(st.layer); }
-        if (show && st.layer._d) refreshPoints(st.layer);
+        if (!show && map.hasLayer(st.layer)) map.removeLayer(st.layer);
       }
       const hintEl = document.getElementById(`extra-hint-${i}`);
       if (hintEl) {
@@ -534,12 +667,9 @@
       if (!small()) d.open = true;
       d.innerHTML =
         `<summary>${chev}Legend</summary>
-         <div style="margin-top:6px"><b>Enterococcus geometric mean</b></div>
-         <div class="muted" style="margin-bottom:6px">Most probable number (MPN) per 100 ml</div>` +
-        ["good", "advisory", "poor"].map(k => `<div class="row"><span class="dot" style="background:${C.colors[k]}"></span>${esc(C.labels[k])}</div>`).join("") +
-        `<div class="row" style="margin-top:4px"><span class="dot" style="width:9px;height:9px;border:1.5px dashed ${C.ink2};opacity:.8"></span>Fewer than ${C.minN} samples</div>
+         <div id="legend-cwqt"></div>
          <div id="legend-extra"></div>
-         <div class="muted" style="margin-top:6px">${esc(D.updated)}. Click a site for details.</div>`;
+         <div class="muted" style="margin-top:6px">${esc(D.updated)}</div>`;
       L.DomEvent.disableClickPropagation(d);
       L.DomEvent.disableScrollPropagation(d);
       return d;
@@ -547,22 +677,38 @@
   });
   map.addControl(new Legend());
   function updateLegend() {
-    const box = document.getElementById("legend-extra");
-    if (!box) return;
+    const top = document.getElementById("legend-cwqt"), box = document.getElementById("legend-extra");
+    if (!top || !box) return;
+    // CWQT sites: only while they're shown; the title names the selected results
+    top.innerHTML = !cwqtOn ? "" :
+      `<div style="margin-top:6px"><b>Enterococcus Bacteria Levels (${esc(D.layers[cwqtIndex].legend || D.layers[cwqtIndex].name)})</b></div>
+       <div class="muted" style="margin-bottom:6px">Most probable number (MPN) per 100 ml (geometric mean)</div>` +
+      ["good", "advisory", "poor"].map(k => `<div class="row">${dropSvg(C.colors[k])}${esc(C.labels[k])}</div>`).join("") +
+      `<div class="row" style="margin-top:4px">${dropSvg("#ffffff", { stroke: C.ink2, dash: true, w: 10 })}Fewer than ${C.minN} samples</div>
+       <div class="muted" style="margin-top:4px">Click a site for details.</div>`;
     const sw = (meta, c) => meta.style && meta.style.icon
       ? `<span style="display:inline-block;width:14px;margin-right:4px;vertical-align:-3px">${iconSvg(meta, 14)}</span>`
+      : meta.style && meta.style.shape === "square" ? squareSvg(c, meta.style.border || c)
       : meta.kind === "point"
       ? `<span class="dot" style="width:9px;height:9px;background:${c}"></span>`
       : `<span class="dot" style="border-radius:2px;background:${c}55;border:1.5px solid ${c}"></span>`;
-    let html = "", lastHead = null;
+    let html = "", lastHead = null, pending = false;
+    const closeGroup = () => {                // one "not yet complete" key under a group that uses it
+      if (pending) html += `<div class="row" style="margin-top:2px">${squareSvg("#8a8f99", "#5d6470", { dash: true, op: 0.25 })}Not yet complete (in design or construction)</div>`;
+      pending = false;
+    };
     EXTRA.forEach((meta, i) => {
       if (!extraState[i].checked) return;
-      const head = meta.categories ? meta.name : meta.group;   // layers with types get their own heading
-      if (head !== lastHead) { html += `<div style="margin-top:8px"><b>${esc(head)}</b></div>`; lastHead = head; }
-      html += meta.categories
+      const pipe = meta.style && meta.style.pipeline;
+      const head = meta.categories && !pipe ? meta.name : meta.group;   // layers with types get their own heading
+      if (head !== lastHead) { closeGroup(); html += `<div style="margin-top:8px"><b>${esc(head)}</b></div>`; lastHead = head; }
+      html += pipe ? `<div class="row">${hatchSvg("#7d8a76", "#56654f")}${esc(meta.name)}</div>`
+        : meta.categories
         ? meta.categories.classes.map(c => `<div class="row">${sw(meta, c.color)}${esc(c.label)}</div>`).join("")
         : `<div class="row">${sw(meta, meta.style.color || "#555")}${esc(meta.name)}</div>`;
+      if (meta.complete) pending = true;
     });
+    closeGroup();
     box.innerHTML = html;
   }
 
