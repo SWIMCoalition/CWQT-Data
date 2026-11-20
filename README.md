@@ -16,9 +16,9 @@ Results entered in the master sheet automatically appear on the map the next mor
 | File | Purpose |
 |---|---|
 | `cwqt_visualize.py` | Reads the workbook, calculates the statistics and writes every output. All thresholds and definitions are in its **CONFIGURATION** section near the top. |
-| `templates/` | The web pages' design: `map.html` (map page), `charts.html` (charts page), `cwqt.css` (shared colors, fonts, banner). Edit these to change how the portal looks; see [Changing the look](#changing-the-look-of-the-portal). |
+| `templates/` | The web pages' design: `map.html` (map page), `charts.html` (charts page), `data-sources.html` (Data Disclosures & Sources page), `cwqt.css` (shared colors, fonts, banner). Edit these to change how the portal looks; see [Changing the look](#changing-the-look-of-the-portal). |
 | `templates/assets/` | SWIM branding: `swim-logo.png` (banner and chart footers), `swim-emblem.png` (browser-tab icon) and `fonts/` (Poppins, used in the charts; free under the SIL Open Font License, see `OFL-LICENSE.txt`). |
-| `data/` | Extra map layers (partner labs, outfalls, drainage areas, green infrastructure) and `layers.json`, which says how each one is shown, plus `CWQT_Sites_GoogleMyMap.csv`, which supplies each site's "See raw data" link. See [Map layers](#map-layers). |
+| `data/` | Extra map layers (partner labs, NYC and NJ outfalls, drainage areas, green infrastructure, NJ and NYS disadvantaged communities) and `layers.json`, which says how each one is shown; `CWQT_Sites_GoogleMyMap.csv`, which supplies each site's "See raw data" link; and `data_sources.csv`, the source list on the Data Disclosures & Sources page. See [Map layers](#map-layers). |
 | `requirements.txt` | Python packages the script needs. |
 | `.github/workflows/update-map.yml` | The daily job: download the sheet → run the script → publish the site. |
 | `status.json` | Written by the daily job: latest sample date, sample count and site count. A new commit means new data arrived. |
@@ -46,8 +46,12 @@ every site matches.
 - **Wet weather** = at least 0.25" of rain at Central Park on the sampling day plus the 2 days
   before. Precipitation text is cleaned up first: "Trace" counts as 0, and "0.45 (3.2 snow)" counts
   as 0.45.
-- **Lab/field splits** recorded in Notes are ignored as of now, so the numbers match the GeoMean
-  tabs. Run with `--average-splits` to average them as the FAQ describes.
+- **Lab/field splits and duplicates** recorded in Notes are averaged with the main result, as the
+  sheet's FAQ says ("Average the values"), e.g. a result of 20 with "Lab Split = 40" counts as 30.
+  The script reads the many ways splits are written ("<10 (lab split)", "Lab Split: 75",
+  "183 (1:10 PM Field Split)", "41 (lab duplicate)", …). The GeoMean tabs leave splits out, so the
+  cross-check against the tab compares without them. To turn averaging off, set `AVERAGE_SPLITS =
+  False` in the CONFIGURATION section (or run with `--ignore-splits`).
 
 ### What the script expects in the sheet
 Columns are found **by their header names**, so moving or inserting columns is fine.
@@ -72,7 +76,9 @@ New sites only need a row on the Information tab (with coordinates) and a matchi
 `.github/workflows/update-map.yml` runs every day at 11:17 UTC (7:17 am EDT / 6:17 am EST) on
 Ubuntu 24.04:
 
-1. Downloads the sheet as .xlsx, using `CWQT_SHEET_ID`.
+1. Downloads the sheet as .xlsx, using `CWQT_SHEET_ID`. (Optional: a repository *variable*
+   `CWQT_SHEET_URL` adds the sheet's link to the Data Disclosures & Sources page. Without it, no
+   link is shown, so the sheet's address stays private.)
 2. Runs `python cwqt_visualize.py --out build`.
 3. Copies the public files to `site/` and deploys them to GitHub Pages.
 4. Commits `status.json` if the data changed. If 45 days pass with no commit (e.g. off-season), it
@@ -82,7 +88,7 @@ Ubuntu 24.04:
 **Update now:** Actions → *Update CWQT map* → **Run workflow**.
 
 **Check it's working:**
-- The map title says "Data through <date>".
+- The charts page and the Data Disclosures & Sources page say "Data through <date>".
 - The Actions tab shows a green check for each morning.
 - The commit history shows "Data updated: …" after new results are entered.
 
@@ -116,13 +122,15 @@ The design lives in `templates/` and is separate from the calculations. Edit tho
 | The "See raw data" links in site popups | the `results_sheet_url` column of `data/CWQT_Sites_GoogleMyMap.csv`, matched to sites by `site_id`. To use a different file or column, change `SITE_LINKS_FILE` / `SITE_LINKS_COLUMN` in `cwqt_visualize.py`. Sites without a link simply don't show one. |
 | The small time-series chart in site popups | `sparkline` in `templates/map.html` |
 | Chart descriptions and page text on the charts page | `templates/charts.html` |
+| The disclosures on the Data Disclosures & Sources page | `templates/data-sources.html` |
+| The source tables on that page | `data/data_sources.csv` (one row per source; edit it on GitHub or in Excel). Dates written as `2025-12-18` show as "December 18, 2025", `2019-07` as "July 2019", and a year stays as is. `[from script]` fills in the CWQT dates (Last Updated = latest sample, Retrieved = the day of the run). A row with only a source name, like "New Jersey green infrastructure coming soon…", shows as a note. When you replace a file in `data/`, update its Last Updated and Retrieved dates here. |
 | The logo | Replace `templates/assets/swim-logo.png`. The script trims empty transparent margins automatically, so any version of the logo works. It's used in the banner and in every chart's footer. |
 | The browser-tab icon (favicon) | Replace `templates/assets/swim-emblem.png`, ideally a square PNG with a transparent background, 512 px or larger. The script makes all the sizes browsers need (`favicon.ico`, `favicon-32.png`, `apple-touch-icon.png`), so there's nothing to convert. |
 | Chart fonts and colors | `templates/assets/fonts/` (Poppins), plus `INK`, `SERIES`, etc. in the CONFIGURATION section of `cwqt_visualize.py`. The footer text on each chart is `CHART_FOOTER`. |
 | Basemap choices or the streams overlay | the `BASEMAPS` and `WATERWAYS` lists near the top of the script in `templates/map.html`. `WATERWAYS.minZoom` sets how far in you must zoom before streams appear. |
 | Which waterbodies count as creeks, bays or major rivers in the "recovery after rain" chart | `WATERBODY_GROUPS` and `SITE_GROUP_OVERRIDES` in the CONFIGURATION section of `cwqt_visualize.py` |
 | Which green infrastructure types count as vegetated or green-grey, and their colors | the `lists` and each layer's `style` in `data/layers.json`. See [Green infrastructure](#green-infrastructure). |
-| The feedback email address on the charts page | the two `mailto:` links in `templates/charts.html` (the "Provide Feedback" button and the last footer line) |
+| The feedback email address | the two `mailto:` links in `templates/charts.html` and in `templates/data-sources.html` (the "Provide Feedback" button and the last footer line) |
 | Thresholds, categories, season dates | the CONFIGURATION section of `cwqt_visualize.py` (used by the charts *and* the map) |
 
 Words in double curly braces in the templates (e.g. `{{DATA}}`, `{{N_SITES}}`) are filled in by the
@@ -140,6 +148,12 @@ script. Keep them where you want those values to appear.
   shown: "Enterococcus Bacteria Levels (2026)", "(Latest 30 Days)" or "(All Seasons)". The category
   labels ("Good: ≤ 35", "Advisory: 35–104", "Poor: > 104") are `CATEGORY_LABELS` in
   `cwqt_visualize.py`, so they read the same on the map and in the chart legends.
+- The legend ends with a "Data disclosures & sources" link to `data-sources.html`, which has the
+  NJDEP disclaimer, a general data disclaimer, and a table of every data source (layer, source,
+  publisher, link, last updated and retrieved dates). It's styled like the charts page.
+- Disadvantaged communities (NJ overburdened communities and NYS disadvantaged communities) are
+  black outlines with black diagonal hatching and see-through gaps, so features underneath still
+  show.
 - Green infrastructure is drawn as small squares (points) and shapes (polygons) in the same color, so
   one legend swatch covers both: solid green with a darker green border for vegetated, solid grayish
   green for green-grey. Pipeline projects (not finished yet) are their own layer: hollow squares and
@@ -172,11 +186,13 @@ Besides the CWQT sites, the map's Layers menu offers the datasets in `data/`:
 |---|---|---|---|
 | Partner Laboratories | Active Labs (on when the map opens) | any zoom | SWIM blue flask (`status` is "Active") |
 | Partner Laboratories | Historic Labs | any zoom | gray flask (any other `status`) |
-| Sewers & Stormwater | Outfalls | ~1-mile zoom (12) | colored by type: CSO, MS4, highway, direct drainage, other |
+| Sewers & Stormwater | Outfalls (NYC, plus NJ CSO and MS4 outfalls) | ~1-mile zoom (12) | colored by type: CSO, MS4, highway, direct drainage, other |
 | Sewers & Stormwater | Combined sewer drainage areas | any zoom | violet outlines |
-| Green Infrastructure | Vegetated Green Infrastructure (finished) | ~1-mile zoom (12) | solid green squares and shapes, darker green border |
-| Green Infrastructure | Green-Grey Infrastructure (finished) | ~1-mile zoom (12) | solid grayish-green squares and shapes |
-| Green Infrastructure | Pipeline Projects (in design or construction, both kinds) | ~1-mile zoom (12) | hollow squares and hatched shapes, dashed outline |
+| Green Infrastructure (NYC) | Vegetated Green Infrastructure (finished) | ~1-mile zoom (12) | solid green squares and shapes, darker green border |
+| Green Infrastructure (NYC) | Green-Grey Infrastructure (finished) | ~1-mile zoom (12) | solid grayish-green squares and shapes |
+| Green Infrastructure (NYC) | Pipeline Projects (in design or construction, both kinds) | ~1-mile zoom (12) | hollow squares and hatched shapes, dashed outline |
+| Disadvantaged Communities | NJ Overburdened Communities | any zoom | black outline, see-through black hatching |
+| Disadvantaged Communities | NYS Disadvantaged Communities | any zoom | black outline, see-through black hatching |
 
 The green infrastructure layers appear at the same zoom as the streams overlay. Each layer except Active Labs is off
 until someone checks it, and is only downloaded then. Hovering over a lab shows its name; clicking
@@ -185,7 +201,34 @@ as `Lab Manager: Name; Lab Tech: Name`). Each point layer is drawn as one pictur
 marker per point, and only what's on screen is drawn, so even the 17,000 green infrastructure
 features stay fast: with all three green infrastructure layers on at zoom 12 the map uses about 13 MB of
 memory, versus about 2 MB with only the CWQT sites and labs. If that feels slow on phones, raise
-their `minZoom` to 13 in `data/layers.json`.
+their `minZoom` to 13 in `data/layers.json`. The Outfalls layer is the largest download (31,000
+points with the New Jersey outfalls, about 0.6 MB compressed), so it also starts at zoom 12.
+
+### New Jersey and New York State layers
+- **Which places are kept.** New Jersey features are kept only in Hudson, Bergen, Essex, Union,
+  Middlesex and Somerset counties, plus 11 Passaic County municipalities (Wayne, North Haledon,
+  Hawthorne, Prospect Park, Haledon, Paterson, Totowa, Woodland Park, Little Falls, Clifton and
+  Passaic). Both lists are under `lists` at the bottom of `data/layers.json` (`nj_counties`,
+  `nj_passaic_municipalities`). The NYS layer keeps only tracts in the five NYC counties.
+- **Outfalls.** One checkbox shows NYC's outfalls and both New Jersey files (`sources` in the
+  outfalls entry), with the same colors by type.
+  - NJ CSO outfalls: the title is the alternate outfall name (`OUTFALL_ALT`); then Type (CSO),
+    CSO ID, Municipality, County, Receiving water, Solids/floatables control (Yes/No) and Status.
+    NJDEP's file has no county, so it's looked up from the municipality in the NJ Overburdened
+    Communities file. Only the 23 municipalities with CSOs need it, and all match.
+  - NJ MS4 outfalls: the title is the outfall ID; Type is Highway for discharge code R12 (highway
+    agencies) and separate storm sewer (MS4) otherwise; then Location (road name), Municipality,
+    County, Owner, Pipe material, Pipe height and Receiving area. Owner is the permit holder
+    (`FACILITY_NAME`, e.g. "NJ Turnpike Authority", "Wayne Township"), because `OWNERTYPE` is filled
+    in inconsistently (Municipality / Municipal / Township / Local…); `OWNERTYPE` is used only when
+    there's no permit holder. Blank-looking values ("TBD", "Unknown", a pipe height of 0 or -999)
+    are left out, and pipe material codes are spelled out (RCP → Reinforced concrete (RCP)).
+- **NJ Overburdened Communities.** Block groups designated by NJDEP; "Adjacent" block groups are
+  left out. Popup: Municipality, County, Total population, Percent low income, Percent minority,
+  Percent limited English households, Overburdened community criteria and Block group (GEOID).
+- **NYS Disadvantaged Communities.** Census tracts "Designated as DAC" in the 2023 final criteria.
+  Popup: County, Population, Burden score and percentile, Vulnerability score and percentile,
+  Combined score, Combined statewide percentile rank and Census tract (GEOID).
 
 ### Green infrastructure
 All three green infrastructure layers read all four DEP files in `data/NYC_Green_Infrastructure_…/`
@@ -216,16 +259,20 @@ All three green infrastructure layers read all four DEP files in `data/NYC_Green
 **How it works.** `data/layers.json` lists each layer: which file(s), which fields go in the popup,
 colors, and the zoom level it appears at. On each run the script reads those files and writes small
 web-ready copies to `layers/` on the site, keeping only the listed fields, rounding coordinates to
-about 1 m and simplifying outlines. The ~24 MB of raw downloads become about 1.8 MB.
+about 1 m and simplifying outlines. The ~165 MB of raw downloads become about 6.4 MB (about 1.3 MB
+compressed, which is how browsers download them).
 
 **Updating a dataset.** Replace the file in `data/` with the new download. File names in
 `layers.json` use `*` (e.g. `NYC_Citywide_Outfalls_*.json`), so a newly dated file is picked up
-automatically. If two files match, the newest name wins, so delete the old one.
+automatically. If two files match, the newest name wins, so delete the old one. Then update the
+file's dates in `data/data_sources.csv`.
 
 **Adding a dataset.** Put the file in `data/`, then copy an existing entry in `data/layers.json` and
 edit it. The notes at the top of that file explain each setting, including `where` (split one file
 into several layers, as the Active/Historic labs do), `style.icon` (draw an icon instead of a dot),
-`style.shape` (`"square"`) and `complete` / `built_date` (see above). Files must be GeoJSON in
+`style.shape` (`"square"`), `style.hatch`, `complete` / `built_date` (see above), and `sources` /
+`map` / `format` (several files in one layer, renaming and formatting their fields, as the outfalls
+and disadvantaged communities layers do). Add the new source to `data/data_sources.csv` too. Files must be GeoJSON in
 latitude/longitude, like NYC Open Data's GeoJSON exports. Shapefiles and KML files need converting
 first, e.g. at <https://mapshaper.org>: drop in the file (for a shapefile, all of its parts: `.shp`,
 `.shx`, `.dbf` and `.prj`), then Export → GeoJSON. While there:
@@ -253,9 +300,9 @@ Options:
 |---|---|
 | `--out FOLDER` | Where outputs go (default `cwqt_outputs/`). |
 | `--window-end YYYY-MM-DD` | End date of the 30-day window (default: latest sample). |
-| `--average-splits` | Average lab/field split results recorded in Notes. |
+| `--ignore-splits` | Use only the main result, ignoring lab/field splits recorded in Notes. |
 | `--site-pngs` | Also save each site's two charts as PNGs (`…_geomean.png` and `…_samples.png`). |
-| `--no-map` | Skip the web pages (map and charts page). |
+| `--no-map` | Skip the web pages (map, charts and data sources pages). |
 
 Outputs go to `cwqt_outputs/` (or the `--out` folder). Open `index.html` there in a browser to
 preview the portal before publishing.
@@ -292,6 +339,12 @@ Found in November 2026 in the `data/` files:
     11 assets of the Design of Corona Cloudburst Hub have a blank `asset_type` and are drawn as
     vegetated.
   - Medians: 1 unfinished median has a construction date; it isn't shown.
+- NJDEP MS4 outfalls (September 23, 2025 edition): 27 records have no coordinates; about 200 statewide
+  have no county or municipality (written as 0). Their county is filled in from other outfalls with
+  the same permit holder, which places all but 2 in the portal's area (1 Edgewater, 1 Woodbridge).
+  Those without a municipality are left out in Passaic County, where the municipality decides. Many
+  fields are sparse (only about 12–23% of the outfalls shown have a road name, pipe material, pipe height or receiving area), and a
+  few pipe heights look like feet rather than inches (1 in, 0.75 in).
 
 Fixed in October 2026: site 160's (Hackensack) positive longitude, and the 2026 rainfall, which is now
 entered, so 2026 has a wet/dry split. The script still checks for both, in case they recur.

@@ -1,0 +1,102 @@
+<!doctype html>
+<!--
+  CWQT Data Portal: Data Disclosures & Sources page template.
+  cwqt_visualize.py fills in the placeholders written in double curly braces and saves this as
+  data-sources.html. The source tables come from data/data_sources.csv; the disclosures below are
+  plain text: edit them freely.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Data Disclosures &amp; Sources · Community Water Quality Testing Data Portal</title>
+<link rel="icon" href="favicon.ico" sizes="any">
+<link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="stylesheet" href="cwqt.css">
+<style>
+  .content { max-width: 1040px; margin: 0 auto; padding: 24px 20px 48px; }
+  .intro h2 { font: var(--title-weight) 26px/1.2 var(--font-heading); margin: 0 0 6px; }
+  .muted { color: var(--ink-2); }
+  .card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 18px 20px; margin-top: 18px; }
+  .card h3 { font: var(--title-weight) 18px/1.3 var(--font-heading); margin: 0 0 8px; }
+  .card h4 { font: 600 15px/1.3 var(--font-heading); margin: 18px 0 6px; color: var(--brand); }
+  .card h4:first-of-type { margin-top: 4px; }
+  .card p { margin: 0 0 10px; max-width: 75ch; }
+  table.sources { border-collapse: collapse; width: 100%; font-size: 13px; table-layout: fixed; }
+  /* Same column widths in every table, so the sections line up */
+  .sources th:nth-child(1) { width: 17%; } .sources th:nth-child(2) { width: 29%; }
+  .sources th:nth-child(3) { width: 15%; } .sources th:nth-child(4) { width: 9%; }
+  .sources th:nth-child(5) { width: 15%; } .sources th:nth-child(6) { width: 15%; }
+  .sources th, .sources td { text-align: left; vertical-align: top; padding: 7px 10px 7px 0; border-bottom: 1px solid var(--line); }
+  .sources th { font-weight: 600; color: var(--ink-2); font-size: 12px; white-space: nowrap; }
+  .sources td.date { white-space: nowrap; }
+  .sources tr.note td { color: var(--ink-2); font-style: italic; }
+  .footer { margin-top: 28px; font-size: 12px; color: var(--ink-2); }
+  .emblem { display: block; width: 96px; height: auto; margin: 28px auto 0; }
+  @media (max-width: 720px) {
+    .content { padding: 16px 12px 36px; }
+    .intro h2 { font-size: 21px; }
+    .card { padding: 14px; }
+    /* Phones: each source becomes a small block of labeled lines */
+    .sources thead { display: none; }
+    .sources tr { display: block; padding: 8px 0; border-bottom: 1px solid var(--line); }
+    .sources td { display: block; border: 0; padding: 1px 0; white-space: normal !important; }
+    .sources td[data-label]::before { content: attr(data-label) ": "; color: var(--ink-2); }
+    .sources td.layer { font-weight: 600; }
+    .sources td.layer::before { content: none; }
+  }
+</style>
+</head>
+<body>
+
+<header class="banner">
+  <div class="brand">
+    <a href="https://www.swimmablenyc.org/">
+        <img class="logo" src="{{LOGO_URL}}" alt="SWIM Coalition"
+             onerror="this.outerHTML='<span class=&quot;logo-text&quot;>SWIM Coalition</span>'">
+    </a>
+    <h1>Community Water Quality Testing Data Portal</h1>
+  </div>
+  <nav class="actions">
+    <a class="btn primary" href="index.html">
+      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 3 5 8l5 5"/></svg>
+      <span class="long">Back to the map</span><span class="short">Map</span>
+    </a>
+    <a class="btn" href="mailto:contact@swimmablenyc.org?subject=CWQT%20Data%20Portal" title="Email contact@swimmablenyc.org">
+      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 3.5h11v7h-6l-3 2.5v-2.5h-2z"/></svg>
+      <span class="long">Provide Feedback</span><span class="short">Feedback</span>
+    </a>
+  </nav>
+</header>
+
+<main class="content">
+  <section class="intro">
+    <h2>Data Disclosures &amp; Sources</h2>
+  </section>
+
+  <section class="card" id="disclosures">
+    <h3>Disclosures</h3>
+    <p>This portal contains New Jersey Department of Environmental Protection (NJDEP) Geographic
+      Information System digital data, but this secondary product has not been verified by NJDEP and is
+      not state-authorized or endorsed.</p>
+    <p>The data used in this portal may be updated, corrected, or refreshed by the original publishers at
+      any time. While the SWIM Coalition strives to provide useful and updated information, we cannot
+      guarantee completeness or accuracy of the data.</p>
+  </section>
+
+  <section class="card" id="sources">
+    <h3>Data Sources</h3>
+    {{SOURCES}}
+  </section>
+
+  <p class="footer">Updated automatically every morning from the CWQT master data sheet · {{DATA_THROUGH}} ·
+    Updated {{BUILT}}.</p>
+  <p class="footer">This site was made using open-source data. The code is available in the
+    <a href="https://github.com/SWIMCoalition/CWQT-Data" target="_blank" rel="noopener">CWQT-Data repository on GitHub</a>.</p>
+  <p class="footer">Feedback is welcome! Please contact us with any questions or suggestions at
+    <a href="mailto:contact@swimmablenyc.org?subject=CWQT%20Data%20Portal">contact@swimmablenyc.org</a>.</p>
+  <img class="emblem" src="assets/swim-emblem-192.png" alt="SWIM Coalition emblem" width="96" height="96" loading="lazy" onerror="this.remove()">
+</main>
+</body>
+</html>

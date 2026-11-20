@@ -64,6 +64,7 @@ import re
 import sys
 import warnings
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
@@ -119,6 +120,9 @@ GOOD_MAX = 35                # geomean <= 35  -> acceptable for primary contact
 ADVISORY_MAX = 104           # 35-104 -> advisory;  > 104 -> closure-level
 SINGLE_SAMPLE_LIMIT = 104    # single-sample threshold used for "% of samples over"
 MIN_SAMPLES_FOR_GEOMEAN = 5  # standards call for >= 5 samples in a 30-day geomean
+AVERAGE_SPLITS = True        # average lab/field splits and duplicates recorded in Notes with the
+                             # main result, as the sheet's FAQ says ("Average the values"). False
+                             # (or --ignore-splits) uses the main result only, like the GeoMean tabs.
 
 # NYS DEC class-specific criteria (geomean, statistical threshold value), shown
 # in map popups. Class I numbers are DEC's 72/266 criteria used on the Class I tab.
@@ -306,8 +310,25 @@ def _name_to_id_lookup(xlsx: Path, sites: pd.DataFrame) -> dict[str, int]:
     return lookup
 
 
+_SPLIT_WORD = re.compile(r"split|duplicate", re.I)
+_SPLIT_NOISE = re.compile(r"\d{1,2}:\d{2}\s*(?:[AP]\.?M\.?)?"          # times: 9:45 AM, 10:30
+                          r"|\d+(?:\.\d+)?\s*(?:m|ft|in|\"|')\s*down"   # depths: 1 m down, 2" down
+                          r"|\*.*$", re.I)                              # trailing *remarks
+_SPLIT_NUM = re.compile(r"[<>]?\s*\d+(?:\.\d+)?")
+
+
+def split_value(note) -> float:
+    """The MPN of a lab/field split or duplicate written in Notes, or NaN if the note has none.
+    Handles "<10 (lab split)", "Lab Split = 75", "Split: 52", "41 (lab duplicate)",
+    "183 (1:10 PM Field Split)", "30 (1 m down Field Split 9:45 AM)" and similar."""
+    if not isinstance(note, str) or not _SPLIT_WORD.search(note):
+        return np.nan
+    m = _SPLIT_NUM.search(_SPLIT_NOISE.sub(" ", note))
+    return parse_mpn(m.group(0).replace(" ", ""))[0] if m else np.nan
+
+
 def load_samples(xlsx: Path, sites: pd.DataFrame, qa: list[QAIssue],
-                 average_splits: bool = False) -> pd.DataFrame:
+                 average_splits: bool = AVERAGE_SPLITS) -> pd.DataFrame:
     """One row per sample, cleaned. Values come from the workbook's last
     calculated values (Google Sheets includes these when you download .xlsx)."""
     d = pd.read_excel(xlsx, sheet_name=DATA_SHEET)
@@ -362,11 +383,10 @@ def load_samples(xlsx: Path, sites: pd.DataFrame, qa: list[QAIssue],
             f"(rows {', '.join(map(str, blank.row.head(10)))}"
             f"{'…' if len(blank) > 10 else ''})."))
 
-    # Lab/field splits recorded in Notes, e.g. "<10 (lab split)"
-    split_re = re.compile(r"^\s*([<>]?\s*\d+(?:\.\d+)?)\s*\((?:(?:lab|field)\s*split|duplicate)\)", re.I)
-    split_val = out["notes"].map(lambda s: parse_mpn(split_re.match(str(s)).group(1))[0]
-                                 if isinstance(s, str) and split_re.match(s) else np.nan)
-    out["split_mpn"] = split_val
+    # Lab/field splits and duplicates recorded in Notes, e.g. "<10 (lab split)", "Lab Split = 75",
+    # "183 (1:10 PM Field Split)". mpn_main keeps the main result (what the GeoMean tabs use).
+    out["split_mpn"] = out["notes"].map(split_value)
+    out["mpn_main"] = out["mpn"]
     if average_splits:  # FAQ: "Average the values"
         has = out.split_mpn.notna() & out.mpn.notna()
         out.loc[has, "mpn"] = (out.loc[has, "mpn"] + out.loc[has, "split_mpn"]) / 2
@@ -498,7 +518,8 @@ def verify_against_workbook(xlsx: Path, samples: pd.DataFrame) -> list[str]:
             if not isinstance(sid, (int, float)):
                 continue
             ws_ = w[w.site_id == sid]
-            mine = (len(ws_), geomean(ytd[ytd.site_id == sid].mpn), geomean(ws_.mpn))
+            col = "mpn_main" if "mpn_main" in samples else "mpn"   # the tabs ignore splits
+            mine = (len(ws_), geomean(ytd[ytd.site_id == sid][col]), geomean(ws_[col]))
             theirs = (cnt, ytd_gm, gm30)
             ok = True
             for a, b in zip(mine, theirs):
@@ -509,7 +530,8 @@ def verify_against_workbook(xlsx: Path, samples: pd.DataFrame) -> list[str]:
             n_ok += bool(ok)
             n_tot += 1
         msgs.append(f"30 Day GeoMean Primary Contact tab: {n_ok}/{n_tot} sites match "
-                    f"(count, YTD geomean, 30-day geomean).")
+                    f"(count, YTD geomean, 30-day geomean; compared without lab splits, as the tab "
+                    f"leaves them out).")
     except Exception as e:  # pragma: no cover
         msgs.append(f"(Skipped workbook cross-check: {e})")
     return msgs
@@ -1542,6 +1564,172 @@ def _gi_done(raw, complete, built, today):
     return done, status or None
 
 
+# ---- Helpers for data/layers.json: filters, field mapping and value formatting -------------
+
+def _ci(v) -> str:
+    return str(v).strip().casefold() if v is not None else ""
+
+
+def _match(cond, props: dict, lists: dict) -> bool:
+    """Does a feature pass a "where" filter? cond is one condition, a list (all must pass),
+    {"all": [...]} or {"any": [...]}. A condition names a "field" and one test: equals,
+    not_equals, in / not_in (a list written in place), in_list / not_in_list (the name of a list
+    under "lists"), contains / not_contains. Text is compared ignoring case."""
+    if not cond:
+        return True
+    if isinstance(cond, list):
+        return all(_match(c, props, lists) for c in cond)
+    if "all" in cond:
+        return all(_match(c, props, lists) for c in cond["all"])
+    if "any" in cond:
+        return any(_match(c, props, lists) for c in cond["any"])
+    v = _ci(_clean_value(props.get(cond["field"])))
+    in_list = lambda name: v in {_ci(x) for x in lists.get(name, ())}
+    tests = {
+        "equals": lambda t: v == _ci(t), "not_equals": lambda t: v != _ci(t),
+        "in": lambda t: v in {_ci(x) for x in t}, "not_in": lambda t: v not in {_ci(x) for x in t},
+        "in_list": in_list, "not_in_list": lambda t: not in_list(t),
+        "contains": lambda t: _ci(t) in v, "not_contains": lambda t: _ci(t) not in v,
+    }
+    return all(fn(cond[k]) for k, fn in tests.items() if k in cond)
+
+
+_ABBREV = {"TWP": "Township", "TWSP": "Township", "BORO": "Borough", "BORO.": "Borough",
+           "CNTY": "County", "CO": "County", "CO.": "County", "TWN": "Town", "VLG": "Village",
+           "AUTH": "Authority", "AUTH.": "Authority", "DEPT": "Department", "DEPT.": "Department",
+           "DIV": "Division", "DIV.": "Division", "TWP.": "Township"}
+_KEEP_UPPER = {"NJ", "NJDOT", "NJDEP", "NJT", "NY", "NYC", "NYS", "US", "USA", "MUA", "UA", "DPW",
+               "PVSC", "BOE", "II", "III", "IV", "LLC", "PSE&G", "MTA", "PANYNJ", "RCP", "CMP",
+               "HDPE", "PVC", "VCP", "ERCP", "DIP", "CIP", "MS4", "CSO", "VA", "NJIT", "RWJ"}
+
+
+def _pretty_name(v: str) -> str:
+    """'WAYNE TWP' -> 'Wayne Township', 'NJ TURNPIKE AUTHORITY' -> 'NJ Turnpike Authority'.
+    Text that isn't all capitals is left alone."""
+    if not v or v != v.upper():
+        return v
+    words = []
+    for i, w in enumerate(v.split()):
+        u = w.upper()
+        words.append(_ABBREV.get(u) or (u if u in _KEEP_UPPER else
+                     w.lower() if i and u in {"OF", "AND", "THE", "FOR", "AT"}
+                     else "-".join(x.capitalize() for x in w.split("-"))))
+    return " ".join(words)
+
+
+def _num_or_none(v):
+    try:
+        f = float(str(v).replace(",", "").replace("%", ""))
+    except (TypeError, ValueError):
+        return None
+    return f if math.isfinite(f) else None
+
+
+_NYC_COUNTY = {"Kings": "Kings (Brooklyn)", "New York": "New York (Manhattan)",
+               "Richmond": "Richmond (Staten Island)", "Bronx": "Bronx", "Queens": "Queens"}
+
+
+def _format_value(v, how: str):
+    """Formats for "format" in data/layers.json. Returns None to leave the field out."""
+    if v is None:
+        return None
+    n = _num_or_none(v)
+    if how == "title":       # ALL CAPS -> Title Case (other text is left alone)
+        s = str(v)
+        return s.title().replace("'S ", "'s ") if s == s.upper() and any(c.isalpha() for c in s) else s
+    if how == "name":
+        return _pretty_name(str(v))
+    if how == "yesno":
+        return {"y": "Yes", "yes": "Yes", "n": "No", "no": "No"}.get(_ci(v), v)
+    if how == "pct":         # 45.2 -> "45%"
+        return None if n is None else f"{n:.0f}%"
+    if how == "int":         # 1234.0 -> "1,234"
+        return None if n is None else f"{n:,.0f}"
+    if how == "dec1":        # 25.2272 -> "25.2"
+        return None if n is None else f"{n:.1f}"
+    if how == "ordinal":     # 0.6024 (a fraction) -> "60th"
+        if n is None:
+            return None
+        k = int(round(n * 100))
+        suf = "th" if 10 <= k % 100 <= 20 else {1: "st", 2: "nd", 3: "rd"}.get(k % 10, "th")
+        return f"{k}{suf}"
+    if how == "inches":      # 15 -> "15 in"; 0 or negative (e.g. -999) means unknown
+        return None if n is None or n <= 0 else f"{n:g} in"
+    if how == "nyc_county":  # "Kings" -> "Kings (Brooklyn)"
+        return _NYC_COUNTY.get(str(v), v)
+    return v
+
+
+_props_cache: dict = {}
+_lookup_misses: dict = {}
+
+
+def _file_props(path: Path) -> list[dict]:
+    if path not in _props_cache:
+        _props_cache[path] = [f.get("properties") or {}
+                              for f in json.loads(path.read_text(encoding="utf-8")).get("features", [])]
+    return _props_cache[path]
+
+
+def _lookup_table(spec: dict) -> dict:
+    """{key: value} from another file in data/, e.g. municipality -> county. Keys that map to
+    more than one value are left out rather than guessed (and reported if a feature needs one)."""
+    matches = sorted(DATA_DIR.glob(spec["file"]))
+    if not matches:
+        print(f"  note: lookup file {spec['file']} not found in data/")
+        return {}
+    seen: dict = {}
+    ignore = {_ci(x) for x in spec.get("ignore", [])}     # values that mean "unknown", e.g. "0"
+    for p in _file_props(matches[-1]):
+        k, v = _ci(_clean_value(p.get(spec["key"]))), _clean_value(p.get(spec["value"]))
+        if k and v is not None and _ci(v) not in ignore:
+            seen.setdefault(k, set()).add(str(v))
+    return {k: next(iter(vs)) for k, vs in seen.items() if len(vs) == 1}   # ambiguous names: no match
+
+
+def _normalize(raw: dict, src: dict, lookups: dict) -> dict:
+    """Rename a source file's fields to the layer's field names using the source's "map":
+    {layer field: source field} or {layer field: {"value": constant}} or
+    {layer field: {"from": field, "map": {code: value}, "default": value}} or
+    {layer field: {"lookup": {"file", "key", "value", "match"}}}, or a list of any of these
+    (the first one that gives a value wins)."""
+    if not src.get("map"):
+        return dict(raw)
+    out = {}
+    missing = {k: {_ci(x) for x in v} for k, v in src.get("missing", {}).items()}
+
+    def one(key, how):
+        if isinstance(how, str):
+            v = _clean_value(raw.get(how))
+        elif "value" in how:
+            v = how["value"]
+        elif "lookup" in how:
+            m = _clean_value(raw.get(how["lookup"]["match"]))
+            v = lookups[_lookup_key(how)].get(_ci(m))
+            if v is None and m is not None:
+                _lookup_misses.setdefault(key, set()).add(str(m))
+        else:
+            code = _clean_value(raw.get(how["from"]))
+            v = {_ci(k): x for k, x in how.get("map", {}).items()}.get(_ci(code), how.get("default", code))
+        return None if v is not None and _ci(v) in missing.get(key, ()) else v
+
+    for key, how in src["map"].items():
+        out[key] = next((v for v in (one(key, h) for h in (how if isinstance(how, list) else [how]))
+                         if v is not None), None)
+    return out
+
+
+def _lookup_key(how: dict) -> str:
+    return json.dumps(how["lookup"], sort_keys=True)
+
+
+def _lookup_specs(src: dict) -> list[dict]:
+    hows = []
+    for how in src.get("map", {}).values():
+        hows += how if isinstance(how, list) else [how]
+    return [h for h in hows if isinstance(h, dict) and "lookup" in h]
+
+
 def build_data_layers(out: Path) -> list[dict]:
     """Turn the files listed in data/layers.json into small GeoJSON files in out/layers/
     (only the fields the popups use, coordinates rounded to ~1 m, outlines simplified).
@@ -1556,14 +1744,22 @@ def build_data_layers(out: Path) -> list[dict]:
     layer_dir.mkdir(parents=True, exist_ok=True)
     metas = []
     for L in cfg.get("layers", []):
-        files, file_label = [], {}
-        for pattern in L["files"]:
-            matches = sorted(DATA_DIR.glob(pattern))
-            if matches:
-                files.append(matches[-1])          # newest dated download wins
-                file_label[matches[-1]] = L.get("file_labels", {}).get(pattern)
+        # A layer reads its own "files" and/or several "sources", each with its own files, field
+        # names ("map") and filter ("where"), e.g. NYC and New Jersey outfalls in one layer.
+        sources = ([{"files": L["files"]}] if L.get("files") else []) + L.get("sources", [])
+        jobs, file_label = [], {}
+        for src in sources:
+            for pattern in src["files"]:
+                matches = sorted(DATA_DIR.glob(pattern))
+                if matches:
+                    jobs.append((src, matches[-1]))    # newest dated download wins
+                    file_label[matches[-1]] = {**L.get("file_labels", {}),
+                                               **src.get("file_labels", {})}.get(pattern)
+                else:
+                    print(f"  note: no file in data/ matches {pattern} (layer '{L['name']}')")
+        files = [f for _, f in jobs]
         if not files:
-            print(f"  note: no file in data/ matches layer '{L['name']}' ({', '.join(L['files'])}); skipped")
+            print(f"  note: no file in data/ matches layer '{L['name']}'; skipped")
             continue
         cats = L.get("categories")
         values = L.get("values", {})
@@ -1594,23 +1790,26 @@ def build_data_layers(out: Path) -> list[dict]:
                 strings.append(v)
             return index[v]
 
-        rows, kinds = [], set()
-        for f in files:
+        rows, kinds, counts = [], set(), {}
+        for src, f in jobs:
+            lookups = {_lookup_key(h): _lookup_table(h["lookup"]) for h in _lookup_specs(src)}
+            src_values = {k: {_ci(c): x for c, x in m.items()} for k, m in src.get("values", {}).items()}
+            fmt = {**L.get("format", {}), **src.get("format", {})}
+            n_before = len(rows)
             for feat in json.loads(f.read_text(encoding="utf-8")).get("features", []):
                 g = feat.get("geometry")
                 if not g or not g.get("coordinates"):
                     continue
-                raw = feat.get("properties") or {}
-                if where:   # e.g. only labs whose status is "Active"
+                raw = _normalize(feat.get("properties") or {}, src, lookups)
+                if not _match(src.get("where"), raw, lists):
+                    continue
+                if where and ("any" in where or "all" in where or isinstance(where, list)):
+                    if not _match(where, raw, lists):
+                        continue
+                elif where:   # e.g. only labs whose status is "Active"
+                    if not _match(where, raw, lists):
+                        continue
                     wv = str(_clean_value(raw.get(where["field"])) or "")
-                    if "equals" in where and wv != str(where["equals"]):
-                        continue
-                    if "not_equals" in where and wv == str(where["not_equals"]):
-                        continue
-                    if "in_list" in where and wv not in lists.get(where["in_list"], set()):
-                        continue
-                    if "not_in_list" in where and wv in lists.get(where["not_in_list"], set()):
-                        continue
                     if "note_unless_in" in where and wv not in lists.get(where["note_unless_in"], set()):
                         unlisted[wv or "(blank)"] = unlisted.get(wv or "(blank)", 0) + 1
                 raw = dict(raw)
@@ -1627,9 +1826,15 @@ def build_data_layers(out: Path) -> list[dict]:
                 vals = []
                 for k in keep:
                     v = _clean_value(raw.get(k))
-                    vals.append(-1 if v is None else sid(values.get(k, {}).get(str(v), v)))
+                    if v is not None and k in src_values:
+                        v = src_values[k].get(_ci(v), v)
+                    if v is not None:
+                        v = values.get(k, {}).get(str(v), v)
+                    if v is not None and k in fmt:
+                        v = _format_value(v, fmt[k])
+                    vals.append(-1 if v is None or v == "" else sid(v))
                 kinds.add("point" if g["type"] == "Point" else "shape")
-                gs = _slim_geometry(g)
+                gs = _slim_geometry(g, tol=L.get("simplify", 1e-5))
                 row = [gs["coordinates"] if g["type"] == "Point" else gs, vals]
                 if cats:
                     rv = str(_clean_value(raw.get(cats["field"])))
@@ -1637,6 +1842,11 @@ def build_data_layers(out: Path) -> list[dict]:
                                      if rv in c.get("values", []) or rv in lists.get(c.get("list"), ())),
                                     len(cats["classes"])))
                 rows.append(row)
+            counts[f.name] = len(rows) - n_before
+            for k, ms in _lookup_misses.items():
+                print(f"  note: no {k} found for {', '.join(sorted(ms))} in {f.name}; those features "
+                      f"have no {k}" + (" and may be filtered out" if src.get("where") else ""))
+            _lookup_misses.clear()
         if unlisted:
             print(f"  note: types not in the '{where['note_unless_in']}' list, drawn as "
                   f"'{L['name']}' or its pipeline (check data/layers.json): "
@@ -1651,7 +1861,8 @@ def build_data_layers(out: Path) -> list[dict]:
         feats = rows
         metas.append({
             "id": L["id"], "group": L.get("group", "Other layers"), "name": L["name"],
-            "url": f"layers/{L['id']}.json", "title": L.get("title"),
+            "url": f"layers/{L['id']}.json", "title": L.get("title"), "titleText": L.get("title_text"),
+            "subtitleText": L.get("subtitle_text"),
             "titlePrefix": L.get("titlePrefix", ""),
             "subtitle": L.get("subtitle"), "contacts": L.get("contacts"), "hover": bool(L.get("hover")),
             "fields": [[k, lab] for k, lab in L.get("fields", {}).items()],
@@ -1662,7 +1873,8 @@ def build_data_layers(out: Path) -> list[dict]:
                                        + [cats.get("other", {"label": "Other", "color": "#8a8f99"})]}
                            if cats else None),
         })
-        print(f"  layer '{L['name']}': {len(feats):,} features from {', '.join(x.name for x in files)} "
+        print(f"  layer '{L['name']}': {len(feats):,} features from "
+              f"{', '.join(f'{x.name} ({counts.get(x.name, 0):,})' for x in files)} "
               f"-> {path.stat().st_size / 1e6:.1f} MB")
     return metas
 
@@ -1739,7 +1951,6 @@ def build_map(season, sites, site_all, site_year, win, pdfs: dict, logo: str, ou
                 "series": SERIES, "ink2": INK_2},
         "bounds": [[float(have.lat.min()), float(have.lon.min())],
                    [float(have.lat.max()), float(have.lon.max())]],
-        "updated": f"Data through {season.date.max():%b %-d, %Y}",
     }
     payload = json.dumps(data, ensure_ascii=False, separators=(",", ":")).replace("</", "<\\/")
     page = _fill(_template("map.html"), {"LOGO_URL": html.escape(logo)})
@@ -1788,6 +1999,73 @@ def build_charts_page(season, sites, win, pdfs: dict, logo: str, out: Path,
     }
     page = _fill(_template("charts.html"), values)
     _warn_unfilled(page, "charts.html")
+    out.write_text(page, encoding="utf-8")
+
+
+SOURCES_FILE = "data_sources.csv"   # in data/: the tables on the Data Disclosures & Sources page
+
+
+def _source_date(v: str) -> str:
+    """'2025-12-18' -> 'December 18, 2025'; '2019-07' -> 'July 2019'; '2026' stays as is."""
+    v = (v or "").strip()
+    for fmt, out in (("%Y-%m-%d", "%B %-d, %Y"), ("%m/%d/%Y", "%B %-d, %Y"), ("%Y-%m", "%B %Y")):
+        try:
+            return datetime.strptime(v, fmt).strftime(out)
+        except ValueError:
+            pass
+    return v
+
+
+def build_sources_page(samples: pd.DataFrame, logo: str, out: Path):
+    """Write data-sources.html from templates/data-sources.html and data/data_sources.csv.
+    In the CSV, "[from script]" is filled in here: Last Updated = the latest CWQT sample date,
+    Retrieved = the day of this run (the sheet is downloaded fresh each time). "[sheet link]" is
+    the CWQT_SHEET_URL setting, so the master sheet's address can stay private (no link shown)."""
+    now = pd.Timestamp.now(tz="America/New_York")
+    auto = {"last_updated": f"{samples.date.max():%B %-d, %Y}", "retrieved": f"{now:%B %-d, %Y}"}
+    path = DATA_DIR / SOURCES_FILE
+    rows = list(csv.DictReader(path.open(encoding="utf-8-sig"))) if path.exists() else []
+    if not rows:
+        print(f"  note: {path} is missing or empty; the Data Sources list will be empty")
+    cols = [("layer", "Data Portal Layer"), ("source_name", "Original Source Name"),
+            ("publisher", "Source Publisher"), ("link", "Source Link"),
+            ("last_updated", "Last Updated"), ("retrieved", "Retrieved")]
+    e = html.escape
+    parts, section = [], None
+    for r in rows:
+        r = {k: (v or "").strip() for k, v in r.items() if k}
+        if r.get("section") != section:
+            if section is not None:
+                parts.append("</tbody></table>")
+            section = r.get("section")
+            parts.append(f"<h4>{e(section)}</h4><table class=\"sources\"><thead><tr>"
+                         + "".join(f"<th>{e(lab)}</th>" for _, lab in cols) + "</tr></thead><tbody>")
+        if not any(r.get(k) for k in ("layer", "publisher", "link", "last_updated", "retrieved")):
+            parts.append(f'<tr class="note"><td colspan="{len(cols)}">{e(r.get("source_name", ""))}</td></tr>')
+            continue
+        cells = []
+        for k, lab in cols:
+            v = r.get(k, "")
+            if v == "[from script]":
+                v = auto.get(k, "")
+            if k == "link":
+                url = os.environ.get("CWQT_SHEET_URL", "").strip() if v == "[sheet link]" else v
+                cell = (f'<a href="{e(url)}" target="_blank" rel="noopener">Link</a>'
+                        if url.startswith("http") else "—")
+            else:
+                cell = e(_source_date(v) if k in ("last_updated", "retrieved") else v) or "—"
+            cls = ' class="layer"' if k == "layer" else ' class="date"' if k in ("last_updated", "retrieved") else ""
+            cells.append(f'<td{cls} data-label="{e(lab)}">{cell}</td>')
+        parts.append("<tr>" + "".join(cells) + "</tr>")
+    if section is not None:
+        parts.append("</tbody></table>")
+    page = _fill(_template("data-sources.html"), {
+        "LOGO_URL": html.escape(logo),
+        "SOURCES": "\n    ".join(parts),
+        "DATA_THROUGH": f"Data through {samples.date.max():%b %-d, %Y}",
+        "BUILT": now.strftime("%b %-d, %Y"),
+    })
+    _warn_unfilled(page, "data-sources.html")
     out.write_text(page, encoding="utf-8")
 
 
@@ -1853,9 +2131,10 @@ def main(argv=None):
     ap.add_argument("--out", type=Path, default=Path("cwqt_outputs"), help="output folder")
     ap.add_argument("--window-end", type=str, default=None,
                     help="last day of the 30-day window (YYYY-MM-DD); default = latest sample date")
-    ap.add_argument("--average-splits", action="store_true",
-                    help="average lab/field split results recorded in Notes (per the FAQ). "
-                         "Off by default so numbers match the GeoMean tabs.")
+    ap.add_argument("--ignore-splits", action="store_true",
+                    help="use only the main result, ignoring lab/field splits recorded in Notes "
+                         "(by default they're averaged with it, as the sheet's FAQ says)")
+    ap.add_argument("--average-splits", action="store_true", help=argparse.SUPPRESS)  # now the default
     ap.add_argument("--site-pngs", action="store_true",
                     help="also save each site's two charts as PNGs (in addition to the PDF)")
     ap.add_argument("--no-map", action="store_true", help="skip the web pages (map and charts page)")
@@ -1873,10 +2152,14 @@ def main(argv=None):
     print(f"Reading {args.xlsx} …")
     qa: list[QAIssue] = []
     sites = load_sites(args.xlsx, qa)
-    samples = load_samples(args.xlsx, sites, qa, average_splits=args.average_splits)
+    average = AVERAGE_SPLITS and not args.ignore_splits
+    samples = load_samples(args.xlsx, sites, qa, average_splits=average)
     print(f"  {len(samples):,} samples at {samples.site_id.nunique()} sites, "
           f"{samples.date.min():%b %Y} – {samples.date.max():%b %Y}")
-    checks = [] if args.average_splits else verify_against_workbook(args.xlsx, samples)
+    n_split = int((samples.split_mpn.notna()).sum())
+    print(f"  {n_split} samples have a lab/field split or duplicate in Notes"
+          + ("; averaged with the main result" if average else "; ignored (--ignore-splits)"))
+    checks = verify_against_workbook(args.xlsx, samples)
     for c in checks:
         print("  " + c)
 
@@ -1926,6 +2209,8 @@ def main(argv=None):
         print(f"  wrote {out / 'index.html'} (map, {(out / 'index.html').stat().st_size / 1e3:,.0f} KB)")
         build_charts_page(season, sites, win, pdfs, logo, out / "charts.html", gi, gi_downloaded)
         print(f"  wrote {out / 'charts.html'}")
+        build_sources_page(samples, logo, out / "data-sources.html")
+        print(f"  wrote {out / 'data-sources.html'}")
 
     # Small machine-readable summary (used by the automatic update to detect new data)
     (out / "status.json").write_text(json.dumps({

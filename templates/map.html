@@ -209,6 +209,9 @@
   const squareSvg = (fill, border, { dash = false, op = 1 } = {}) =>
     `<svg class="sw" width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><rect x="1" y="1" width="10" height="10" fill="${fill}" fill-opacity="${op}" stroke="${border}" stroke-width="1.5"${dash ? ' stroke-dasharray="2 1.5"' : ""}/></svg>`;
   // Pipeline (not yet built) key: hatched square with a dashed outline
+  // See-through hatch key (style.hatch): lines slanting the other way, with a solid outline
+  const clearHatchSvg = (line, border) =>
+    `<svg class="sw" width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M1 5L7 11M1 1L11 11M5 1L11 7" stroke="${line}" stroke-width="1"/><rect x="1" y="1" width="10" height="10" fill="none" stroke="${border}" stroke-width="1.3"/></svg>`;
   const hatchSvg = (line, border) =>
     `<svg class="sw" width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><rect x="1" y="1" width="10" height="10" fill="#fff"/><path d="M1 7L7 1M1 11L11 1M5 11L11 5" stroke="${line}" stroke-width="1.2"/><rect x="1" y="1" width="10" height="10" fill="none" stroke="${border}" stroke-width="1.5" stroke-dasharray="2.5 1.5"/></svg>`;
 
@@ -303,6 +306,10 @@
   if (embedded) {   // inside the Wix box, open the charts page in its own tab instead of the small box
     const cb = document.getElementById("charts-btn");
     cb.target = "_blank"; cb.rel = "noopener";
+    document.addEventListener("click", e => {      // same for the legend's data sources link
+      const a = e.target.closest && e.target.closest("#sources-link");
+      if (a) { a.target = "_blank"; a.rel = "noopener"; }
+    }, true);
   }
   if (embedded) {   // a way out of the embed box to the full-size portal
     const Full = L.Control.extend({ options: { position: "topleft" }, onAdd() {
@@ -378,17 +385,24 @@
   }
   // Pipeline layers (style.pipeline): points are hollow and shapes hatched, both in the category color
   const hatches = {};
-  function hatchFill(color) {
-    if (!hatches[color]) {
-      const k = window.devicePixelRatio > 1 ? 2 : 1, t = document.createElement("canvas"), s = 8 * k, x = t.getContext("2d");
-      t.width = t.height = s; x.fillStyle = "rgba(255,255,255,0.6)"; x.fillRect(0, 0, s, s);
-      x.strokeStyle = color; x.lineWidth = s / 6; x.beginPath();
+  // clear: true leaves the gaps between the lines see-through (style.hatch layers) and slants the
+  // lines the other way, so they read differently from pipeline projects when both are on.
+  function hatchFill(color, clear = false) {
+    const key = color + (clear ? " clear" : "");
+    if (!hatches[key]) {
+      const k = window.devicePixelRatio > 1 ? 2 : 1, t = document.createElement("canvas"), s = (clear ? 10 : 8) * k, x = t.getContext("2d");
+      t.width = t.height = s;
+      if (!clear) { x.fillStyle = "rgba(255,255,255,0.6)"; x.fillRect(0, 0, s, s); }
+      x.strokeStyle = color; x.lineWidth = clear ? k : s / 6; x.globalAlpha = clear ? 0.75 : 1; x.beginPath();
       x.moveTo(0, s); x.lineTo(s, 0); x.moveTo(-s / 4, s / 4); x.lineTo(s / 4, -s / 4); x.moveTo(s * 3 / 4, s * 5 / 4); x.lineTo(s * 5 / 4, s * 3 / 4); x.stroke();
       const pat = renderer._ctx.createPattern(t, "repeat");
-      if (k > 1 && pat.setTransform) pat.setTransform(new DOMMatrix().scale(1 / k));   // the map canvas is already scaled
-      hatches[color] = pat;
+      let m = new DOMMatrix();
+      if (clear) m = m.scale(-1, 1);                       // mirror: lines run the other way
+      if (k > 1) m = m.scale(1 / k);                       // the map canvas is already scaled
+      if (pat.setTransform) pat.setTransform(m);
+      hatches[key] = pat;
     }
-    return hatches[color];
+    return hatches[key];
   }
   // Features not yet finished (layers with "complete" in layers.json, e.g. green infrastructure
   // in design or under construction) are drawn see-through with a dotted outline.
@@ -397,11 +411,14 @@
     const st = meta.style || {}, c = extraColor(meta, f), done = !meta.complete || f.properties._done !== "0";
     if (st.pipeline) return { color: extraBorder(meta, f) || c, weight: st.weight || 1.6, opacity: 1,
                               fillColor: hatchFill(c), fillOpacity: 1, dashArray: "4,3" };
+    if (st.hatch) return { color: st.border || c, weight: st.weight || 1, opacity: 1,
+                           fillColor: hatchFill(st.hatch, true), fillOpacity: 1 };
     return { color: st.border || c, weight: done ? (st.weight || 1) : INCOMPLETE.weight, opacity: done ? 0.9 : INCOMPLETE.opacity,
              fillColor: c, fillOpacity: done ? (st.fill === undefined ? 0.15 : st.fill) : INCOMPLETE.fillOpacity,
              dashArray: done ? null : "3,3" };
   }
   function featureTitle(meta, p) {
+    if (meta.titleText) return meta.titleText;
     return meta.title && p[meta.title] !== undefined ? meta.titlePrefix + p[meta.title] : meta.name;
   }
   // "Lab Manager: Anna Weiss; Lab Tech: Reese LeVea" -> one table row per person
@@ -417,6 +434,7 @@
     const sub = meta.style && meta.style.pipeline   // e.g. "Pipeline Project · Green-Grey Infrastructure · Porous Pavement"
                 ? ["Pipeline Project", cls && cls.label, p._source].filter(Boolean).join(" · ")
               : p._source ? `${meta.name} · ${p._source}`          // e.g. "Vegetated Green Infrastructure · Regulated Project"
+              : meta.subtitleText !== undefined && meta.subtitleText !== null ? meta.subtitleText
               : meta.subtitle && p[meta.subtitle] ? `${meta.group} · ${p[meta.subtitle]}` : meta.name;
     let rows = meta.fields.filter(([k]) => p[k] !== undefined && p[k] !== "")
       .map(([k, lab]) => `<tr><td>${esc(lab)}</td><td>${esc(p[k])}</td></tr>`).join("");
@@ -426,7 +444,7 @@
                        : `<tr><td colspan="2" class="muted">No lab contacts listed</td></tr>`;
     }
     return `<div class="pop"><div class="name">${esc(featureTitle(meta, p))}</div>
-      <div class="muted" style="margin-bottom:6px">${esc(sub)}</div><table>${rows}</table></div>`;
+      ${sub ? `<div class="muted" style="margin-bottom:6px">${esc(sub)}</div>` : ""}<table>${rows}</table></div>`;
   }
   // Icons for layers with style.icon (drawn as small images, not dots)
   const ICONS = {
@@ -669,7 +687,7 @@
         `<summary>${chev}Legend</summary>
          <div id="legend-cwqt"></div>
          <div id="legend-extra"></div>
-         <div class="muted" style="margin-top:6px">${esc(D.updated)}</div>`;
+         <div style="margin-top:8px"><a id="sources-link" href="data-sources.html">Data disclosures &amp; sources</a></div>`;
       L.DomEvent.disableClickPropagation(d);
       L.DomEvent.disableScrollPropagation(d);
       return d;
@@ -689,6 +707,7 @@
     const sw = (meta, c) => meta.style && meta.style.icon
       ? `<span style="display:inline-block;width:14px;margin-right:4px;vertical-align:-3px">${iconSvg(meta, 14)}</span>`
       : meta.style && meta.style.shape === "square" ? squareSvg(c, meta.style.border || c)
+      : meta.style && meta.style.hatch ? clearHatchSvg(meta.style.hatch, meta.style.border || c)
       : meta.kind === "point"
       ? `<span class="dot" style="width:9px;height:9px;background:${c}"></span>`
       : `<span class="dot" style="border-radius:2px;background:${c}55;border:1.5px solid ${c}"></span>`;

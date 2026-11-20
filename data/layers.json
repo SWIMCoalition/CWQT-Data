@@ -27,7 +27,21 @@
     "  show (as month and year) for finished features; dates before min_year or in the future are",
     "  treated as errors and left out. Add \"_built\" to fields to show it, and \"_status\" for the",
     "  status (with the status group added when they disagree).",
-    "categories classes can use \"list\" (a list under \"lists\") instead of \"values\"."
+    "categories classes can use \"list\" (a list under \"lists\") instead of \"values\".",
+    "sources: more files for the same layer, each with its own \"files\", \"where\" and \"map\". map renames",
+    "  a file's fields to the layer's field names: {layer field: source field}, or a list of source",
+    "  fields (the first one filled in wins), or {\"value\": text} (the same for every feature), or",
+    "  {\"from\": field, \"map\": {code: value}, \"default\": value}, or {\"lookup\": {\"file\", \"key\",",
+    "  \"value\", \"match\"}} (look the value up in another file, e.g. county from municipality).",
+    "  missing: {field: [values that mean 'unknown']}; values: lookups for that file only.",
+    "where can also be a list (all must pass), {\"all\": [...]} or {\"any\": [...]}, and use \"in\" / \"not_in\"",
+    "  (a list written in place) and \"contains\" / \"not_contains\". Text is compared ignoring case.",
+    "format: {field: how}: title (ALL CAPS -> Title Case), name (also spells out TWP, BORO, CNTY),",
+    "  yesno (Y/N), pct (45.2 -> 45%), int (1,234), dec1 (one decimal), ordinal (0.60 -> 60th),",
+    "  inches (15 -> 15 in; 0 or less = unknown), nyc_county (Kings -> Kings (Brooklyn)).",
+    "title_text / subtitle_text: the same popup title / subtitle for every feature.",
+    "style.hatch: fill shapes with diagonal lines in this color (see-through between the lines).",
+    "simplify: how much to simplify outlines, in degrees (default 0.00001, about 1 m)."
   ],
   "layers": [
     {
@@ -84,15 +98,23 @@
       "title": "unitid",
       "fields": {
         "outfall_ty": "Type",
+        "cso_id": "CSO ID",
         "location": "Location",
+        "municipality": "Municipality",
+        "county": "County",
         "receiving_": "Receiving water",
+        "solids": "Solids/floatables control",
+        "status": "Status",
         "of_size": "Size",
-        "ownership": "Owner"
+        "ownership": "Owner",
+        "pipe_material": "Pipe material",
+        "pipe_height": "Pipe height",
+        "receiving_area": "Receiving area"
       },
       "values": {
         "outfall_ty": {
           "CSO": "Combined sewer overflow (CSO)",
-          "MS4": "Municipal separate storm sewer (MS4)",
+          "MS4": "Separate storm sewer (MS4)",
           "HIGHWAY": "Highway",
           "DIRECT": "Direct drainage",
           "PLANT": "Wastewater treatment plant",
@@ -155,14 +177,198 @@
         }
       },
       "minZoom": 12,
-      "on": false
+      "on": false,
+      "sources": [
+        {
+          "_note": "NJDEP combined sewer overflow outfalls. NJDEP's file has no county, so it is looked up from the municipality in the NJ Overburdened Communities file.",
+          "files": [
+            "NJ_CSO_Outfalls*.geojson"
+          ],
+          "map": {
+            "unitid": [
+              "OUTFALL_ALT",
+              "CSO_ID"
+            ],
+            "outfall_ty": {
+              "value": "CSO"
+            },
+            "cso_id": "CSO_ID",
+            "municipality": "MUNICIPALITY",
+            "county": {
+              "lookup": {
+                "file": "NJ_Overburdened_Communities*.geojson",
+                "key": "NAME",
+                "value": "COUNTY",
+                "match": "MUNICIPALITY"
+              }
+            },
+            "receiving_": "RECV_WATER",
+            "solids": "SOLIDS_FLOATABLES",
+            "status": "CSO_STAT"
+          },
+          "where": {
+            "any": [
+              {
+                "field": "county",
+                "in_list": "nj_counties"
+              },
+              {
+                "all": [
+                  {
+                    "field": "county",
+                    "equals": "Passaic"
+                  },
+                  {
+                    "field": "municipality",
+                    "in_list": "nj_passaic_municipalities"
+                  }
+                ]
+              }
+            ]
+          },
+          "format": {
+            "county": "title",
+            "solids": "yesno"
+          }
+        },
+        {
+          "_note": "NJDEP MS4 outfall inventory. Discharge code R12 (highway agencies) is drawn as Highway; the rest as separate storm sewer (MS4). Owner is the permit holder (FACILITY_NAME), or OWNERTYPE when that is blank. About 200 rows have no county (written as 0); their county comes from other rows with the same permit holder.",
+          "files": [
+            "NJ_MS4_Outfalls*.geojson"
+          ],
+          "map": {
+            "unitid": "OUTFALL_ID",
+            "outfall_ty": {
+              "from": "DISCHARGECODE",
+              "map": {
+                "R12": "HIGHWAY"
+              },
+              "default": "MS4"
+            },
+            "location": "ROADNAME",
+            "municipality": "MUNICIPALITY",
+            "county": [
+              "COUNTY",
+              {
+                "lookup": {
+                  "file": "NJ_MS4_Outfalls*.geojson",
+                  "key": "FACILITY_NAME",
+                  "value": "COUNTY",
+                  "match": "FACILITY_NAME",
+                  "ignore": [
+                    "0"
+                  ]
+                }
+              }
+            ],
+            "ownership": [
+              "FACILITY_NAME",
+              "OWNERTYPE"
+            ],
+            "pipe_material": "PIPEMATERIAL",
+            "pipe_height": "PIPEHEIGHT",
+            "receiving_area": "TYPEAREARECEIVING"
+          },
+          "missing": {
+            "location": [
+              "TBD",
+              "N/A",
+              "NA",
+              "Unknown",
+              "None",
+              "0",
+              "?",
+              "-"
+            ],
+            "ownership": [
+              "Unknown",
+              "Unsure",
+              "None",
+              "0"
+            ],
+            "pipe_material": [
+              "Unknown",
+              "Unk",
+              "?",
+              "Other",
+              "Not Applicable",
+              "N/A",
+              "<Null>",
+              "Unknown/Could *",
+              "None",
+              "0"
+            ],
+            "receiving_area": [
+              "Unknown",
+              "Other",
+              "None",
+              "N/A",
+              "0",
+              "?"
+            ],
+            "county": [
+              "0"
+            ]
+          },
+          "values": {
+            "pipe_material": {
+              "RCP": "Reinforced concrete (RCP)",
+              "ERCP": "Elliptical reinforced concrete (ERCP)",
+              "CONC": "Concrete",
+              "CONCRETE": "Concrete",
+              "PRECAST": "Precast concrete",
+              "CMP": "Corrugated metal (CMP)",
+              "CORR. METAL": "Corrugated metal (CMP)",
+              "METAL": "Metal",
+              "PVC": "PVC (plastic)",
+              "HDPE": "HDPE (plastic)",
+              "PLASTIC": "Plastic",
+              "VCP": "Vitrified clay (VCP)",
+              "CLAY": "Clay",
+              "DI": "Ductile iron",
+              "DIP": "Ductile iron",
+              "CIP": "Cast iron",
+              "CAST IRON": "Cast iron",
+              "BRICK": "Brick"
+            }
+          },
+          "where": {
+            "any": [
+              {
+                "field": "county",
+                "in_list": "nj_counties"
+              },
+              {
+                "all": [
+                  {
+                    "field": "county",
+                    "equals": "Passaic"
+                  },
+                  {
+                    "field": "municipality",
+                    "in_list": "nj_passaic_municipalities"
+                  }
+                ]
+              }
+            ]
+          },
+          "format": {
+            "location": "title",
+            "county": "title",
+            "ownership": "name",
+            "pipe_height": "inches",
+            "receiving_area": "title",
+            "pipe_material": "title"
+          }
+        }
+      ]
     },
     {
       "id": "cso_drainage",
       "group": "Sewers & Stormwater",
       "name": "Combined sewer drainage areas",
       "files": [
-        "NYC_Drainage_Areas/NYC_combinedsewer_drainage_area*.json"
+        "NYC_combinedsewer_drainage_area*.json"
       ],
       "title": "outfall",
       "titlePrefix": "Drains to outfall ",
@@ -179,7 +385,7 @@
     },
     {
       "id": "gi_vegetated",
-      "group": "Green Infrastructure",
+      "group": "Green Infrastructure (NYC)",
       "name": "Vegetated Green Infrastructure",
       "files": [
         "NYC_Green_Infrastructure_*/DEP_Green_Infrastructure_(Point_Layer)_*.json",
@@ -241,7 +447,7 @@
     },
     {
       "id": "gi_green_grey",
-      "group": "Green Infrastructure",
+      "group": "Green Infrastructure (NYC)",
       "name": "Green-Grey Infrastructure",
       "files": [
         "NYC_Green_Infrastructure_*/DEP_Green_Infrastructure_(Point_Layer)_*.json",
@@ -302,7 +508,7 @@
     },
     {
       "id": "gi_pipeline",
-      "group": "Green Infrastructure",
+      "group": "Green Infrastructure (NYC)",
       "name": "Pipeline Projects",
       "files": [
         "NYC_Green_Infrastructure_*/DEP_Green_Infrastructure_(Point_Layer)_*.json",
@@ -372,10 +578,124 @@
           "color": "#2b8a3e"
         }
       }
+    },
+    {
+      "id": "dac_nj",
+      "group": "Disadvantaged Communities",
+      "name": "NJ Overburdened Communities",
+      "files": [
+        "NJ_Overburdened_Communities*.geojson"
+      ],
+      "where": [
+        {
+          "field": "OVERBURDENED_COMMUNITY_CRITERI",
+          "not_contains": "adjacent"
+        },
+        {
+          "any": [
+            {
+              "field": "COUNTY",
+              "in_list": "nj_counties"
+            },
+            {
+              "all": [
+                {
+                  "field": "COUNTY",
+                  "equals": "Passaic"
+                },
+                {
+                  "field": "NAME",
+                  "in_list": "nj_passaic_municipalities"
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "title_text": "NJDEP Overburdened Community",
+      "subtitle_text": "Disadvantaged Communities",
+      "fields": {
+        "NAME": "Municipality",
+        "COUNTY": "County",
+        "TOTALPOP": "Total population",
+        "LOW_INCOME_PCT": "Percent low income",
+        "MINORITY_PCT": "Percent minority",
+        "PCTLINGUAGEISO": "Percent limited English households",
+        "OVERBURDENED_COMMUNITY_CRITERI": "Overburdened community criteria",
+        "GEOID": "Block group"
+      },
+      "format": {
+        "COUNTY": "title",
+        "TOTALPOP": "int",
+        "LOW_INCOME_PCT": "pct",
+        "MINORITY_PCT": "pct",
+        "PCTLINGUAGEISO": "pct"
+      },
+      "style": {
+        "color": "#000000",
+        "weight": 1,
+        "hatch": "#000000"
+      },
+      "on": false,
+      "simplify": 4e-05
+    },
+    {
+      "id": "dac_nys",
+      "group": "Disadvantaged Communities",
+      "name": "NYS Disadvantaged Communities",
+      "files": [
+        "NYS_Disadvantaged_Communities*.geojson"
+      ],
+      "where": [
+        {
+          "field": "dac_designation",
+          "equals": "Designated as DAC"
+        },
+        {
+          "field": "county",
+          "in": [
+            "Bronx",
+            "Kings",
+            "New York",
+            "Queens",
+            "Richmond"
+          ]
+        }
+      ],
+      "title_text": "NYS Disadvantaged Community",
+      "subtitle_text": "Disadvantaged Communities",
+      "fields": {
+        "county": "County",
+        "population_count": "Population",
+        "burden_score": "Burden score",
+        "burden_score_percentile": "Burden score percentile",
+        "vulnerability_score": "Vulnerability score",
+        "vulnerability_score_percentile": "Vulnerability score percentile",
+        "combined_score": "Combined score",
+        "percentile_rank_combined": "Combined statewide percentile rank",
+        "geoid": "Census tract"
+      },
+      "format": {
+        "county": "nyc_county",
+        "population_count": "int",
+        "burden_score": "dec1",
+        "burden_score_percentile": "ordinal",
+        "vulnerability_score": "dec1",
+        "vulnerability_score_percentile": "ordinal",
+        "combined_score": "dec1",
+        "percentile_rank_combined": "ordinal"
+      },
+      "style": {
+        "color": "#000000",
+        "weight": 1,
+        "hatch": "#000000"
+      },
+      "on": false,
+      "simplify": 4e-05
     }
   ],
   "lists": {
-    "_note": "Green infrastructure asset types (the asset_type field), sorted into the two map layers. Anything in green_grey_types is drawn as Green-Grey Infrastructure; everything else, including types not listed anywhere, is drawn as Vegetated Green Infrastructure. vegetated_types only documents the choices: the build prints a note for any type in neither list.",
+    "_note": "Green infrastructure asset types (the asset_type field), sorted into the two map layers. Anything in green_grey_types is drawn as Green-Grey Infrastructure; everything else, including types not listed anywhere, is drawn as Vegetated Green Infrastructure. vegetated_types only documents the choices: the build prints a note for any type in neither list. nj_counties and nj_passaic_municipalities set which New Jersey features are kept (all of these counties, plus these Passaic County municipalities, named as in NJDEP's files).",
     "vegetated_types": [
       "ROWB",
       "ROWEB",
@@ -426,6 +746,27 @@
       "Stormwater Gallery",
       "Media Filter",
       "ROW Median Non-Vegetated"
+    ],
+    "nj_counties": [
+      "Hudson",
+      "Bergen",
+      "Essex",
+      "Union",
+      "Middlesex",
+      "Somerset"
+    ],
+    "nj_passaic_municipalities": [
+      "Wayne Township",
+      "North Haledon Borough",
+      "Hawthorne Borough",
+      "Prospect Park Borough",
+      "Haledon Borough",
+      "Paterson City",
+      "Totowa Borough",
+      "Woodland Park Borough",
+      "Little Falls Township",
+      "Clifton City",
+      "Passaic City"
     ]
   }
 }
