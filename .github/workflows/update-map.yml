@@ -37,6 +37,9 @@ jobs:
         env:
           CWQT_SHEET_ID: ${{ secrets.CWQT_SHEET_ID }}
           GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+          # Optional: the master sheet's link to show on the Data Disclosures & Sources page.
+          # Leave the repository variable unset to keep the sheet's address private.
+          CWQT_SHEET_URL: ${{ vars.CWQT_SHEET_URL }}
         run: python cwqt_visualize.py --out build
 
       - name: Choose what gets published
@@ -44,7 +47,7 @@ jobs:
         # data-quality report stay private.
         run: |
           mkdir -p site
-          cp build/index.html build/charts.html build/cwqt.css site/
+          cp build/index.html build/charts.html build/data-sources.html build/cwqt.css site/
           cp build/index.html site/cwqt_map.html   # old address keeps working
           cp build/*.png build/site_timeseries.pdf site/
           cp -r build/sites site/
@@ -77,3 +80,4 @@ jobs:
             git commit --allow-empty -m "Keep scheduled update active"
           fi
           git push
+
